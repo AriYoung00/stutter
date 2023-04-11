@@ -1,1 +1,3 @@
-# UCSE CSE131\nMy solutions to the projects for CSE 131 at UCSD, Spring 2023
+# UCSE CSE131
+
+My solutions to the projects for CSE 131 at UCSD, Spring 2023.
