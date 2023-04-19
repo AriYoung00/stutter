@@ -5,35 +5,7 @@ mod emit;
 use std::env;
 use std::fs::File;
 use std::io::prelude::*;
-use std::str::FromStr;
 use parse::Expr;
-
-use im::HashMap;
-
-#[derive(Debug)]
-enum Val {
-    Reg(Reg),
-    Imm(i32),
-    RegOffset(Reg, i32),
-}
-
-#[derive(Debug)]
-enum Reg {
-    RAX,
-    RSP,
-}
-
-#[derive(Debug)]
-enum Instr {
-    IMov(Val, Val),
-    IAdd(Val, Val),
-    ISub(Val, Val),
-}
-
-
-fn compile_expr(prog: Box<Expr>) -> String {
-    todo!("compile_expr");
-}
 
 
 fn main() -> std::io::Result<()> {
@@ -48,7 +20,8 @@ fn main() -> std::io::Result<()> {
 
     // let expr = parse_expr(&parse(&in_contents).unwrap());
     let expr: Box<Expr> = in_contents.parse().unwrap();
-    let result = compile_expr(expr);
+    let init_ctx = (1, im::HashMap::new());
+    let result = emit::compile(expr, init_ctx).unwrap();
 
     let asm_program = format!(
         "

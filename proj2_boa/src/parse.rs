@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::str::FromStr;
 use sexp::Atom::*;
 use sexp::Sexp;
@@ -70,9 +71,9 @@ impl Expr {
 
 
 fn parse_ident(ident: &Sexp) -> ParseResult<(String, Expr)> {
-    let try_name = |name: &str| -> Result<String, String> {
+    let try_name = move |name: &str| -> Result<String, String> {
         if name == "add1" || name == "sub1" || name == "let" {
-            Err(format!("Invalid identifier '{}'", name))
+            Err(format!("Invalid identifier '{name}'"))
         }
         else {
             Ok(name.to_owned())
@@ -90,6 +91,18 @@ fn parse_ident(ident: &Sexp) -> ParseResult<(String, Expr)> {
 
 fn parse_let(idents: &[Sexp], rhs: &Sexp) -> ParseResult<Box<Expr>> {
     let maps: Vec<_> = idents.iter().map(parse_ident).collect::<Result<_, _>>()?;
+
+    let mut seen = HashSet::new();
+    for (name, _) in &maps {
+        if seen.contains(&name) {
+            return Err(format!("Duplicate binding '{name}'"));
+        }
+        else {
+            seen.insert(name);
+        }
+    }
+
+
     Ok(Expr::from_let(maps, parse_expr(rhs)?))
 }
 
