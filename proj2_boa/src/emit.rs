@@ -43,15 +43,25 @@ fn compile_binary(op: BOper, lhs: Box<Expr>, rhs: Box<Expr>, ctx: Context) -> Em
     let op_str = match op {
         BOper::Plus => "add",
         BOper::Minus => "sub",
-        BOper::Times => "mul"
+        BOper::Times => "imul"
     };
 
+    if op == BOper::Times {
+        Ok(format!(r#"
+{lhs_res}
+mov [rsp - {stack_offset}], rax
+{rhs_res}
+{op_str} QWORD [rsp - {stack_offset}]
+        "#))
+    }
+    else {
     Ok(format!(r#"
 {lhs_res}
 mov [rsp - {stack_offset}], rax
 {rhs_res}
 {op_str} rax, [rsp - {stack_offset}]
         "#))
+    }
 }
 
 fn compile_unary(op: UOper, rhs: Box<Expr>, ctx: Context) -> EmitResult<String> {

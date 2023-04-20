@@ -1,5 +1,0 @@
-/target
-test/*.o
-test/*.run
-runtime/*.o
-runtime/*.a
