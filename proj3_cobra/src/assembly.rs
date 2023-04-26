@@ -1,8 +1,12 @@
 #[derive(Debug)]
 pub enum Val {
     Reg(Reg),
-    Imm(i32),
-    RegOffset(Reg, i32),
+
+    Imm(i64),
+
+    /// stack index, will be multiplied by 8 to find actual position since we index the stack in
+    /// 64-bit words
+    StackIndex(usize)
 }
 
 #[derive(Debug)]

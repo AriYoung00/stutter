@@ -2,6 +2,7 @@ mod ast;
 mod assembly;
 mod parse;
 mod util;
+mod compile;
 
 use std::env;
 use std::fs::File;
