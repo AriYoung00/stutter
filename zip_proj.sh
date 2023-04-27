@@ -17,7 +17,7 @@ cargo clean
 cd -
 
 echo "Zipping project..."
-zip -r "${path}_ayoung.zip" $path
+zip -r "${path}_ayoung.zip" $path/**
 
 status=$?
 if [ $status -ne 0 ]; then

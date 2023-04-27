@@ -19,6 +19,12 @@ success_tests! {
         input: "10",
         expected: "true",
     },
+    {
+        name: fact,
+        file: "fact.snek",
+        input: "4",
+        expected: "24",
+    }
 }
 
 runtime_error_tests! {

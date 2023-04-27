@@ -42,7 +42,7 @@ impl FromStr for BOper {
 
 
 impl Expr {
-    pub fn from_num(i: i32) -> Box<Self> {
+    pub fn from_num(i: i64) -> Box<Self> {
         Box::new(Self::Number(i))
     }
     pub fn from_bool(b: bool) -> Box<Self> {
@@ -137,13 +137,6 @@ fn parse_list(op: &str, list: &[Sexp]) -> ParseResult<Box<Expr>> {
                                                                   parse_expr(rhs)?)),
         ("if", [cond, if_b, else_b]) => Ok(Expr::from_if(parse_expr(cond)?, 
                 parse_expr(if_b)?, parse_expr(else_b)?)),
-        ("block", [Sexp::List(stmts)]) => {
-            let stmts = stmts.iter()
-                .map(parse_expr) // parse statements
-                .map(|r| r.and_then(|v| Ok(*v))) // unbox statements
-                .collect::<ParseResult<Vec<_>>>()?; // collect and check error
-            Ok(Expr::from_block(stmts))
-        },
         ("loop", [rhs])  => Ok(Expr::from_loop(parse_expr(rhs)?)),
         ("break", [rhs]) => Ok(Expr::from_break(parse_expr(rhs)?)),
 
@@ -154,15 +147,31 @@ fn parse_list(op: &str, list: &[Sexp]) -> ParseResult<Box<Expr>> {
     }
 }
 
+fn parse_block(stmts: &[Sexp]) -> ParseResult<Box<Expr>> {
+    let stmts = stmts.iter()
+        .map(parse_expr) // parse statements
+        .map(|r| r.and_then(|v| Ok(*v))) // unbox statements
+        .collect::<ParseResult<Vec<_>>>()?; // collect and check error
+    Ok(Expr::from_block(stmts))
+}
+
+
+fn parse_string(s: &str) -> ParseResult<Box<Expr>> {
+    Ok(match s {
+        "true" => Expr::from_bool(true),
+        "false" => Expr::from_bool(false),
+        "input" => Box::new(Expr::Input),
+        _ => Expr::from_id(s.to_owned())
+    })
+}
+
 fn parse_expr(sexp: &Sexp) -> ParseResult<Box<Expr>> {
     match sexp {
-        Sexp::Atom(I(n)) => Ok(Expr::from_num(*n as i32)),
+        Sexp::Atom(I(n)) => Ok(Expr::from_num(*n)),
+        Sexp::Atom(S(s)) => parse_string(s),
 
-        Sexp::Atom(S(s)) if s == "true" => Ok(Expr::from_bool(true)),
-        Sexp::Atom(S(s)) if s == "false" => Ok(Expr::from_bool(false)),
-
-        Sexp::Atom(S(s)) => Ok(Expr::from_id(s.clone())),
         Sexp::List(v)    => match &v[..] {
+            [Sexp::Atom(S(s)), the_rest @ ..] if s == "block" =>  parse_block(the_rest),
             [Sexp::Atom(S(s)), the_rest @ ..] => parse_list(s, the_rest),
             [first, _] => Err(format!("Invalid expression -- expected string atom first, got {:?}", first)),
             stuff @ _  => Err(format!("Invalid expression -- got ambiguous structure {:?}", stuff))
@@ -214,7 +223,7 @@ mod test {
     }
 
     fn num(arg: i32) -> BE {
-        Expr::from_num(arg)
+        Expr::from_num(arg as i64)
     }
 
     fn plus(lhs: BE, rhs: BE) -> BE {

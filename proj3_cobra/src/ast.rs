@@ -20,7 +20,7 @@ pub enum BOper {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Expr {
-    Number(i32),
+    Number(i64),
     Boolean(bool),
     Id(String),
     Let(Vec<(String, Expr)>, Box<Expr>),
@@ -31,4 +31,5 @@ pub enum Expr {
     Break(Box<Expr>),
     Set(String, Box<Expr>),
     Block(Vec<Expr>),
+    Input,
 }

@@ -69,6 +69,7 @@ name = "cobra"
 version = "0.1.0"
 dependencies = [
  "im",
+ "lazy_static",
  "prettydiff",
  "sexp",
 ]
