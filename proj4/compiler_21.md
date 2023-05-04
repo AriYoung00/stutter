@@ -142,6 +142,29 @@ functionality using jumps and a conditional, rather than a simple conditional
 move into `RAX` (as is used elsewhere in compiler 21).
 
 
+#### Code Snippet 3
+```rust
+                    Op2::LessEqual => {
+                        let end_label = new_label(l, "ifend");
+                        let else_label = new_label(l, "ifelse");
+                        v.push(Instr::CMP(
+                            Val::Reg(Reg::RAX),
+                            Val::RegOffset(Reg::RSP, si * 8),
+                        ));
+                        v.push(Instr::JLE(else_label.to_string()));
+                        v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(1)));
+                        v.push(Instr::JMP(end_label.to_string()));
+                        v.push(Instr::LABEL(else_label.to_string()));
+                        v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(3)));
+                        v.push(Instr::LABEL(end_label.to_string()));
+                    }
+```
+This is the author's implementation of the `<=` binary operator. It is relevant
+to my second test program because my second test program uses it to check
+whether or not any incorrect integer overflow / wraparound has occurred, which
+would not be correct behavior.
+
+
 ## Bugs, Missing Features, Design Decisions
 
 I have been unable to find any examples of programs which do not execute
@@ -156,9 +179,9 @@ tests, in addition to all of the autograder tests and the (extremely!) comprehen
 test suite implemented by compiler_57.
 
 
-Lessons and Advice
+# Lessons and Advice
 
-Answer the following questions:
+*Answer the following questions:*
 
     Identify a decision made in this compiler that's different from yours. Describe one way in which it's a better design decision than you made.
     Identify a decision made in this compiler that's different from yours. Describe one way in which it's a worse design decision than you made.
