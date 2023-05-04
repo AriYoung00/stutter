@@ -198,13 +198,13 @@ comprehensive test suite laid out by compiler_57.
    also leads to more readable code -- when this compiler needs to insert a
    number check, all they have to do is call `check_is_number(&mut instrs)`,
    whereas in my compiler I need something like:
-```rust
-    let check = gen_num_check(Reg::RAX);
-    instrs.extend(check)
-```
+   ```rust
+        let check = gen_num_check(Reg::RAX);
+        instrs.extend(check)
+   ```
    This is much less declarative, and so I prefer the direction taken by the
    author of compiler_34.
-2. Another decision made in this compiler which is different from mine is to parse
+3. Another decision made in this compiler which is different from mine is to parse
    the `input` expression as a string-based identity. Conversely, my compiler
    represents `input` as a variant under the `Instr` enum. I believe the
    decision to represent it as an `Id` is a poor design decision because it
@@ -212,12 +212,12 @@ comprehensive test suite laid out by compiler_57.
    correctness -- since the compiler cannot actually check to make sure that
    we're exhaustively handling all matched expressions. Additionally, it makes
    the code less extensible and less readable (as it introduces a special case).
-3. One improvement that I will make to my compiler after reading this one is
+4. One improvement that I will make to my compiler after reading this one is
    changing the difference I outlined in (1.) to match the design of this
    compiler. I was very impressed with how readable the inline "assembly" (i.e.,
    instantiation of the enum `Instr`) was in this compiler, and I think this
    would be a very positive change to my compiler.
-4. One improvement that I would recommend to the author of this compiler is to
+5. One improvement that I would recommend to the author of this compiler is to
    change the difference I outlined in (2.) to use an enum variant to represent
    `Input`, rather than `Instr::Id(s)`. I believe this change will help prevent
    bugs in the future -- it is reasonable to expect that we will add more

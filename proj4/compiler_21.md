@@ -199,21 +199,22 @@ test suite implemented by compiler_57.
     this compiler has chosen to represent labels as a type of instruction, which
     I find interesting -- in my compiler, I chose to wrap the `Instr` enum inside
     of another enum: 
-```rust
-    enum AssemblyLine {
-        Instructure(Instr), 
-        Label(String)
-    } 
-```
+    ```rust
+        enum AssemblyLine {
+            Instructure(Instr), 
+            Label(String)
+        } 
+    ```
     In this case, I believe that my implementation is overall better. Although
     it leads to a slightly messier codebase, it is more explicit and could
     possibly prevent certain bugs through the Rust type checker.
-3. One improvement which I will make to my compiler after seeing this one is my
+
+4. One improvement which I will make to my compiler after seeing this one is my
     implementation of the `*` binary operator. My implementation does not shift
     one operand prior to multiplying, which leads to error in the result by a
     factor of two. It is a simple mistake, but I did not realize I was making it
     until I read this compiler's implementation of `*`.
-4. One improvement that I would recommend to this author after reading their
+5. One improvement that I would recommend to this author after reading their
     compiler is to move more of their code into functions. Essentially all of the
     compilation logic is present inside of one giant `match...` within
     `compile_expr`, and this makes it a bit hard to read and follow the specific
