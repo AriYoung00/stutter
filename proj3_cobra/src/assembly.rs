@@ -4,13 +4,13 @@ pub trait Emit {
 
 impl Emit for i64 {
     fn emit(&self) -> String {
-        self.to_string()
+        format!("QWORD {}", self)
     }
 }
 
 impl Emit for usize {
     fn emit(&self) -> String {
-        self.to_string()
+        format!("QWORD {}", self)
     }
 }
 
