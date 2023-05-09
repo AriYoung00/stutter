@@ -41,6 +41,7 @@ impl Emit for Val {
 
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum Reg {
     RAX,
     RBX,
@@ -62,6 +63,7 @@ impl Emit for Reg {
 
 
 #[derive(Debug)]
+#[allow(dead_code)]
 /// This enum represents assembly instructions
 pub enum Instr {
     Mov(Val, Val),

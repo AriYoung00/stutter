@@ -17,6 +17,7 @@ pub struct Ctx {
     li: Option<usize>,
     vars: im::HashMap<String, usize>,
 }
+#[allow(dead_code)]
 impl Ctx {
     pub fn new(si: usize, li: Option<usize>, vars: im::HashMap<String, usize>) -> Self {
         Self {
