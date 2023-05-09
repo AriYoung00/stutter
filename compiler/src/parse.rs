@@ -97,6 +97,8 @@ fn parse_ident(ident: &Sexp) -> ParseResult<(String, Expr)> {
     }
 }
 
+/// This function takes a list of S-expressions, and attempts to parse all of them as individual
+/// bindings within a `let` statement.
 fn parse_let(idents: &[Sexp], rhs: &Sexp) -> ParseResult<Box<Expr>> {
     let maps: Vec<_> = idents.iter().map(parse_ident).collect::<Result<_, _>>()?;
 
@@ -117,12 +119,18 @@ fn parse_let(idents: &[Sexp], rhs: &Sexp) -> ParseResult<Box<Expr>> {
     Ok(Expr::from_let(maps, parse_expr(rhs)?))
 }
 
+/// This method takes an operation and two S-expressions, and tries to parse the combination of the
+/// 3 as a binary operation. It will try to parse `op` as a [`BOper`], and then try to parse `lhs` and
+/// `rhs` as [`Box<Expr>`].
 fn parse_binary(op: &str, lhs: &Sexp, rhs: &Sexp) -> ParseResult<Box<Expr>> {
     op
         .parse()
         .and_then(|op| Ok(Expr::from_binary(op, parse_expr(lhs)?, parse_expr(rhs)?)))
 }
 
+/// This method takes an operation and an S-expression, and trues to parse them as a unary
+/// operation. It will try to parse `op` as a [`UOper`], and then try to parse `operand` as a
+/// [`Box<Expr>`]
 fn parse_unary(operator: &str, operand: &Sexp) -> ParseResult<Box<Expr>> {
     operator
         .parse()
@@ -130,6 +138,10 @@ fn parse_unary(operator: &str, operand: &Sexp) -> ParseResult<Box<Expr>> {
 }
 
 
+/// This method takse an operation and a list of S-expressions, and tries to determine what to
+/// parse the overall structure as. It checks for several keywords, attempting to dispatch to
+/// parsing methods for each of the expressions the keywords represent. Finally, it will attempt to
+/// parse the operation and operands as either a [`Expr::BinOp`] or [`Expr::UnOp`]
 fn parse_list(op: &str, list: &[Sexp]) -> ParseResult<Box<Expr>> {
     match (op, list) {
         ("let", [Sexp::List(binds), rhs]) => parse_let(binds, rhs),
@@ -147,6 +159,9 @@ fn parse_list(op: &str, list: &[Sexp]) -> ParseResult<Box<Expr>> {
     }
 }
 
+
+/// This method will attempt to parse the given list of statements as a `block!` expression by
+/// iteratively mapping them into parsed expressions.
 fn parse_block(stmts: &[Sexp]) -> ParseResult<Box<Expr>> {
     let stmts = stmts.iter()
         .map(parse_expr) // parse statements
@@ -156,6 +171,9 @@ fn parse_block(stmts: &[Sexp]) -> ParseResult<Box<Expr>> {
 }
 
 
+/// This memthod will attempt to parse a [`Sexp::Atom(S(_))`] which has been found on its own
+/// inside its parse tree level. This method does not consider attempting to parse `s` as a keyword
+/// or id -- just as a literal (`true`, `false`, `input`, `print`)
 fn parse_string(s: &str) -> ParseResult<Box<Expr>> {
     Ok(match s {
         "true" => Expr::from_bool(true),
@@ -165,6 +183,10 @@ fn parse_string(s: &str) -> ParseResult<Box<Expr>> {
     })
 }
 
+/// This method is the top-level dispatch method for attempting to parse an S-expression. It
+/// examines several attributes of the structure, and either attempts to directly parse it as an
+/// Atom (in the case of [`Sexp::Atom`], or dispatches parsing to some other, more specialized
+/// parsing method (in the case of [`Sexp::List`])
 fn parse_expr(sexp: &Sexp) -> ParseResult<Box<Expr>> {
     match sexp {
         Sexp::Atom(I(n)) => Ok(Expr::from_num(*n)),
