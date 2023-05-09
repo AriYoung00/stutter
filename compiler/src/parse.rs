@@ -1,4 +1,4 @@
-use crate::ast::{UOper, BOper, Expr};
+use crate::ast::{UOper, BOper, Expr, Program, FnDef};
 use crate::util::ParseResult;
 
 use sexp::Sexp;
@@ -78,16 +78,23 @@ impl Expr {
 }
 
 
-fn parse_ident(ident: &Sexp) -> ParseResult<(String, Expr)> {
-    let try_name = move |name: &str| -> Result<String, String> {
-        if name.parse::<UOper>().is_ok() {
-            Err(format!("Invalid identifier '{name}'"))
-        }
-        else {
-            Ok(name.to_owned())
-        }
-    };
+/// This function takes a string reference, and attempts to determine if it is a valid name for a
+/// `let` binding or `fun` declaration. It does so by attempting to parse it as a unary operation,
+/// and then returning an error if it can be parsed as a unary operation, since all unary
+/// operations are invalid names.
+fn try_name(name: &str) -> ParseResult<String> {
+    if name.parse::<UOper>().is_ok() {
+        Err(format!("Invalid identifier '{name}'"))
+    }
+    else {
+        Ok(name.to_owned())
+    }
+}
 
+/// This function takes an S-expression and attempts to parse it as a single `let` binding. It
+/// returns a pair of (String, Box<Expr>) representing the name of the binding, and the expression
+/// which should be evaluated to determine its value.
+fn parse_ident(ident: &Sexp) -> ParseResult<(String, Expr)> {
     match ident {
         Sexp::List(v) => match &v[..] {
             [Sexp::Atom(S(name)), rhs] => Ok((try_name(name)?, *parse_expr(rhs)?)),
@@ -151,6 +158,7 @@ fn parse_list(op: &str, list: &[Sexp]) -> ParseResult<Box<Expr>> {
                 parse_expr(if_b)?, parse_expr(else_b)?)),
         ("loop", [rhs])  => Ok(Expr::from_loop(parse_expr(rhs)?)),
         ("break", [rhs]) => Ok(Expr::from_break(parse_expr(rhs)?)),
+        ("fun", _) => Err("Found 'fun' in an invalid context (not top-level)".into()),
 
         // most generic parse steps come last, to prioritize matching more specific
         (op, [a]) => parse_unary(&op, a),
@@ -203,6 +211,7 @@ fn parse_expr(sexp: &Sexp) -> ParseResult<Box<Expr>> {
     }
 }
 
+
 impl FromStr for Box<Expr> {
     type Err = String;
 
@@ -210,6 +219,84 @@ impl FromStr for Box<Expr> {
         sexp::parse(s)
             .map_err(|e| format!("Invalid S-expression syntax: {}", e))
             .and_then(|exp| parse_expr(&exp))
+    }
+}
+
+
+/// This enum is a convenience type which is used to generically parse top-level statements into
+/// either function definitions, or expressions. It is internal to `parse.rs`, and should not be
+/// public / used outside this file.
+enum InterParseRes {
+    Fn(FnDef),
+    Exp(Box<Expr>),
+}
+
+
+/// This function takes a list of S-Expressions which should be the top level expressions in the
+/// file which we are parsing. This means that it should be a list of expressions, each of which
+/// represent either a function definition, or a top-level expression to evaluate. 
+///
+/// This method will parse either of those things, and return an InterParseResult, which can be
+/// either of those things. The caller should handle partitioning the vector of InterParseRes into
+/// the expected structure of the program.
+fn parse_top_level(stuff: &[Sexp]) -> ParseResult<Vec<InterParseRes>> {
+    let parser = |exp: &Sexp| Ok(match exp {
+        // if it's a list
+        Sexp::List(l) => match &l[..] {
+            // check if the first element is the 'fun keyword'
+            // if it is, parse as a function definition
+            [Sexp::Atom(S(s)), the_rest @ ..] 
+                if s == "fun" => InterParseRes::Fn(parse_fun(the_rest)?),
+            // otherwise, parse as a normal expression
+            _ => InterParseRes::Exp(parse_expr(&exp)?),
+        },
+        // otherwise, parse as a normal expression
+        _ => InterParseRes::Exp(parse_expr(&exp)?),
+    });
+
+    // do the parsing and transform output into correct shape
+    stuff.iter()
+        .map(parser)
+        .collect::<ParseResult<_>>()
+}
+
+
+/// This trait should be used to parse the top-level file contents (as a string) into a Program
+impl FromStr for Program {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let exp = sexp::parse(s)
+            .map_err(|e| format!("Invalid S-expression syntax: {}", e))?;
+
+        let parts = match &exp {
+            Sexp::Atom(_) => vec![InterParseRes::Exp(parse_expr(&exp)?)],
+            Sexp::List(l) => parse_top_level(l)?,
+        };
+
+        let (defs, top_lvl): (Vec<_>, Vec<_>) = parts.into_iter().partition(|e| matches!(e, InterParseRes::Fn(_)));
+        
+        if top_lvl.len() != 1 {
+            return Err(format!("Expected exactly one top level expression, got {}", top_lvl.len()));
+        }
+        let top_lvl = top_lvl.into_iter().next().unwrap();
+
+        let mapped: Vec<_> = defs.into_iter().map(|f| if let InterParseRes::Fn(func) = f { 
+            Ok(func)
+        } else { 
+            Err("Found expr in defs, this should never happen".to_owned())
+        }).collect::<ParseResult<_>>()?;
+
+
+        if let InterParseRes::Exp(e) = top_lvl {
+            Ok(Program{
+                defs: mapped,
+                main: e,
+            })
+        }
+        else {
+            Err("Found FnDef in top level expression, this should never happen".to_owned())
+        }
     }
 }
 
