@@ -191,6 +191,30 @@ fn parse_string(s: &str) -> ParseResult<Box<Expr>> {
     })
 }
 
+
+/// This method will attempt to parse the given list of statements as a [`FnDef`]. It does not
+/// return an expression, as [`FnDef`] is not a member of expression, and is not valid in all of
+/// the contexts where an [`Expr`] is within the AST / parse tree
+fn parse_fun(stmts: &[Sexp]) -> ParseResult<FnDef> {
+    let make_name = |exp: &Sexp| match exp {
+        Sexp::Atom(S(name)) => try_name(name),
+        _ => return Err("Found something besides Atom(str) in fun name / param position".into()),
+    };
+
+    let [name_exp, params_exps @ .., body_exp] = stmts else {
+        return Err("Not enough arguments in `fun` definition".into());
+    };
+
+    let name: String = make_name(name_exp)?;
+    let args: Vec<_> = params_exps.into_iter()
+        .map(make_name)
+        .collect::<ParseResult<_>>()?;
+    let body = parse_expr(body_exp)?;
+
+    Ok(FnDef { name, args, body, })
+}
+
+
 /// This method is the top-level dispatch method for attempting to parse an S-expression. It
 /// examines several attributes of the structure, and either attempts to directly parse it as an
 /// Atom (in the case of [`Sexp::Atom`], or dispatches parsing to some other, more specialized
@@ -302,7 +326,7 @@ impl FromStr for Program {
 
 #[cfg(test)]
 mod test {
-    use crate::parse::ParseResult;
+    use crate::{parse::ParseResult, ast::{FnDef, Program}};
     use super::Expr;
 
     type BE = Box<Expr>;
@@ -370,6 +394,16 @@ mod test {
 
     fn eq(lhs: BE, rhs: BE) -> BE {
         Expr::from_binary(crate::ast::BOper::Equal, lhs, rhs)
+    }
+
+    fn fun(name: &str, params: &[&str], body: BE) -> FnDef {
+        FnDef{
+            name: name.to_owned(),
+            args: params.into_iter()
+                .map(|s| s.to_string())
+                .collect(),
+            body,
+        }
     }
 
     #[test]
@@ -461,5 +495,19 @@ mod test {
         let input = "(set! hello 5)";
         let res: BE = input.parse().unwrap();
         assert_eq!(res, eset("hello", num(5)));
+    }
+
+    #[test]
+    fn test_parse_one_fun_program() {
+        // second line of input is so I can parse to program correctly
+        // no other good way to parse fun, sadly
+        let input = r#"
+        (fun (testing param1 param2 param3) (+ param1 (+ param2 param3)))
+        (testing 1 2 3)
+        "#;
+        let res: Program = input.parse().unwrap();
+        let expected_defs = vec![fun("testing", &["param1", "param2", "param3"],
+            plus(id("param1"), plus(id("param2"), id("param3"))))];
+        assert_eq!(res.defs, expected_defs);
     }
 }
