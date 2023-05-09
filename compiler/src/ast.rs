@@ -8,6 +8,7 @@ pub enum UOper {
     Sub1,
     IsNum,
     IsBool,
+    Print,
 }
 
 impl fmt::Display for UOper {
@@ -67,6 +68,22 @@ pub enum Expr {
     Set(String, Box<Expr>),
     Block(Vec<Expr>),
     Input,
+}
+
+/// This struct represents the type and shape of a valid function definition
+#[derive(Debug, PartialEq, Eq)]
+pub struct FnDef {
+    pub name: String,
+    pub args: Vec<String>,
+    pub body: Box<Expr>,
+}
+
+
+/// This struct represents the type and shape of a valid top-level program
+#[derive(Debug, PartialEq, Eq)]
+pub struct Program {
+    pub defs: Vec<FnDef>,
+    pub main: Box<Expr>,
 }
 
 impl fmt::Display for Expr {
