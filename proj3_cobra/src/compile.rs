@@ -2,6 +2,7 @@ use std::sync::Mutex;
 
 use crate::ast::*;
 use crate::assembly::*;
+use crate::util::*;
 
 use Instr::*;
 use crate::assembly::Reg::*;
@@ -9,36 +10,41 @@ use Val::*;
 
 use lazy_static::lazy_static;
 
-// context is (stack index, variable name->offset map)
-// type Ctx = (usize, im::HashMap<String, usize>);
+
 #[derive(Clone)]
 pub struct Ctx {
-    si: usize,
-    li: Option<usize>,
-    vars: im::HashMap<String, usize>,
+    /// `si` represents the next stack index (with the stack being divided into word-sized chunks)
+    /// which can be written to. After being written to, it should be incremented when passed to
+    /// future calls to `compile`
+    pub si: usize, 
+
+    /// `current_loop_label` is the
+    pub current_loop_label: Option<usize>,
+    pub vars: im::HashMap<String, usize>,
 }
+
 #[allow(dead_code)]
 impl Ctx {
     pub fn new(si: usize, li: Option<usize>, vars: im::HashMap<String, usize>) -> Self {
         Self {
-            si, li, vars
+            si, current_loop_label: li, vars
         }
     }
     pub fn with_si(self, si: usize) -> Self {
-        let Ctx{li, vars, ..} = self;
-        Ctx{si, li, vars}
+        let Ctx{current_loop_label, vars, ..} = self;
+        Ctx{si, current_loop_label, vars}
     }
     pub fn with_li(self, li: usize) -> Self {
         let Ctx{si, vars, ..} = self;
         let li = Some(li);
-        Ctx{si, li, vars}
+        Ctx{si, current_loop_label: li, vars}
     }
     pub fn with_vars(self, vars: im::HashMap<String, usize>) -> Self {
-        let Ctx{si, li, ..} = self;
-        Ctx{si, li, vars}
+        let Ctx{si, current_loop_label: li, ..} = self;
+        Ctx{si, current_loop_label: li, vars}
     }
     pub fn si(&self) -> usize { self.si }
-    pub fn li(&self) -> Option<usize> { self.li }
+    pub fn li(&self) -> Option<usize> { self.current_loop_label }
     pub fn vars(&self) -> &im::HashMap<String, usize> { &self.vars }
 }
 
@@ -59,11 +65,6 @@ fn inc_li() -> usize {
     *li_guard
 }
 
-fn get_li() -> usize {
-    let li_guard = LI.lock().unwrap();
-    *li_guard
-}
-
 fn compile_id(ident: String, ctx: Ctx) -> EmitResult<Assembly> {
     use Val::Reg;
     use AssemblyLine::Instruction;
@@ -79,7 +80,7 @@ fn compile_id(ident: String, ctx: Ctx) -> EmitResult<Assembly> {
 }
 
 fn compile_let(idents: Vec<(String, Expr)>, rhs: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
-    let Ctx{mut si, li, mut vars} = ctx;
+    let Ctx{mut si, current_loop_label: li, mut vars} = ctx;
     let mut instrs = Vec::new();
 
     for (ident, expr) in idents {
@@ -97,180 +98,214 @@ fn compile_let(idents: Vec<(String, Expr)>, rhs: Box<Expr>, ctx: Ctx) -> EmitRes
     Ok(instrs)
 }
 
-fn generate_check_num(v: Val) -> Vec<Instr> {
+fn append_check_num(v: Val, insts: &mut Vec<Instr>) { 
     use Instr::*;
     use Val::*;
     
     if let Imm(_) = v {
         panic!("generate_check_num called with immediate in first pos");
     }
-    vec![
-        Bt(v, Imm(0)),
-        Jc("exit_expected_number".to_owned()),
-    ]
+
+    // insts.push(Bt(v, Imm(0)));
+    insts.push(Test(v, Imm(1)));
+    insts.push(Jnz(EXIT_EXPECTED_NUM.to_owned()));
 }
 
-fn gen_check_bool(v: Val) -> Vec<Instr> {
-    use Instr::*;
-    use Val::*;
+/**
+ * This method checks that two values are of equal types.
+ *
+ * Tramples: RBX
+ */
+fn append_check_eq_type(v1: Val, v2: Val, insts: &mut Vec<Instr>) {
+    insts.extend([
+        Mov(Reg(RBX), v1),
+        Xor(Reg(RBX), v2),
+        Test(Reg(RBX), Imm(1)),
+        Jnz(EXIT_OPERAND_MISMATCH.to_owned()),
+    ])
+}
 
+fn append_check_bool(v: Val, instrs: &mut Assembly) {
     if let Imm(_) = v {
         panic!("generate_check_bool called with immediate in first pos");
     }
-    vec![
-        Bt(v, Imm(0)),
-        Jnc("exit_expected_bool".to_owned()),
-    ]
+
+    instrs.extend([
+        // Bt(v, Imm(0)),
+        Test(v, Imm(1)),
+        Jz(EXIT_EXPECTED_BOOL.to_owned()),
+    ].map(line));
 }
 
 fn compile_binary(op: BOper, lhs: Box<Expr>, rhs: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
-    let Ctx{si, li, ..} = ctx.clone();
+    let si = ctx.si;
 
-    let lhs_res = compile(rhs, ctx.clone())?;
-    let rhs_res = compile(lhs, ctx.clone().with_si(si + 1))?;
-    let op = match op {
-        BOper::Plus => generate_check_num(Reg(RAX)).into_iter()
-            .chain(generate_check_num(StackIndex(si)))
-            .chain(vec![
-                Add(Reg(RAX), StackIndex(si)),
-            ])
-            .collect(),
-        BOper::Minus => generate_check_num(Reg(RAX))
-            .into_iter()
-            .chain(generate_check_num(StackIndex(si)))
-            .chain(vec![
-                Sub(Reg(RAX), StackIndex(si))
-            ])
-            .collect(),
-        BOper::Times => vec![IMul(Reg(RAX), StackIndex(si))],
-        BOper::Equal => vec![Cmp(Reg(RAX), StackIndex(si))],
-        BOper::Greater => generate_check_num(Reg(RAX))
-            .into_iter()
-            .chain(generate_check_num(StackIndex(si)))
-            .chain(vec![
-                Cmp(Reg(RAX), StackIndex(si)),
+    let mut body = Vec::new();
+    match op {
+        BOper::Plus => {
+            append_check_num(Reg(RAX), &mut body);
+            append_check_num(StackIndex(si), &mut body);
+            body.push(Add(Reg(RAX), StackIndex(si)));
+            append_overflow_check(&mut body);
+        },
+        BOper::Minus => {
+            append_check_num(Reg(RAX), &mut body);
+            append_check_num(StackIndex(si), &mut body);
+            body.push(Sub(StackIndex(si), Reg(RAX)));
+            body.push(Mov(Reg(RAX), StackIndex(si)));
+            append_overflow_check(&mut body);
+        },
+        BOper::Times => {
+            append_check_num(Reg(RAX), &mut body);
+            append_check_num(StackIndex(si), &mut body);
+            body.extend([
+                Sar(Reg(RAX)),
+                IMul(Reg(RAX), StackIndex(si))
+            ]);
+            append_overflow_check(&mut body);
+        },
+        BOper::Equal =>{
+            append_check_eq_type(Reg(RAX), StackIndex(si), &mut body);
+            body.extend([
+                Cmp(StackIndex(si), Reg(RAX)),
+                Cmove(RAX, TRUE),
+                Cmovne(RAX, FALSE),
+            ]);
+        },
+        BOper::Greater => {
+            append_check_num(Reg(RAX), &mut body);
+            append_check_num(StackIndex(si), &mut body);
+            body.extend([
+                Cmp(StackIndex(si), Reg(RAX)),
                 Cmovg(RAX, TRUE),
                 Cmovle(RAX, FALSE),
-            ])
-            .collect(),
-        BOper::GreaterEqual => generate_check_num(Reg(RAX))
-            .into_iter()
-            .chain(generate_check_num(StackIndex(si)))
-            .chain(vec![
-                Cmp(Reg(RAX), StackIndex(si)),
+            ]);
+        },
+        BOper::GreaterEqual => {
+            append_check_num(Reg(RAX), &mut body);
+            append_check_num(StackIndex(si), &mut body);
+            body.extend([
+                Cmp(StackIndex(si), Reg(RAX)),
                 Cmovge(RAX, TRUE),
                 Cmovl(RAX, FALSE),
-            ])
-            .collect(),
-        BOper::Less => generate_check_num(Reg(RAX))
-            .into_iter()
-            .chain(generate_check_num(StackIndex(si)))
-            .chain(vec![
-                Cmp(Reg(RAX), StackIndex(si)),
+            ]);
+        },
+        BOper::Less => {
+            append_check_num(Reg(RAX), &mut body);
+            append_check_num(StackIndex(si), &mut body);
+            body.extend([
+                Cmp(StackIndex(si), Reg(RAX)),
                 Cmovl(RAX, TRUE),
                 Cmovge(RAX, FALSE),
-            ])
-            .collect(),
-        BOper::LessEqual => generate_check_num(Reg(RAX))
-            .into_iter()
-            .chain(generate_check_num(StackIndex(si)))
-            .chain(vec![
-                Cmp(Reg(RAX), StackIndex(si)),
+            ]);
+        },
+        BOper::LessEqual => {
+            append_check_num(Reg(RAX), &mut body);
+            append_check_num(StackIndex(si), &mut body);
+            body.extend([
+                Cmp(StackIndex(si), Reg(RAX)),
                 Cmovle(RAX, TRUE),
                 Cmovg(RAX, FALSE),
-            ])
-            .collect(),
+            ]);
+        },
     };
-    let op: Assembly = op.into_iter().map(|v| AssemblyLine::Instruction(v)).collect();
 
-    Ok(lhs_res.into_iter()
-        .chain(vec![AssemblyLine::Instruction(Mov(StackIndex(si), Reg(RAX)))].into_iter())
-        .chain(rhs_res.into_iter())
-        .chain(op.into_iter())
-        .collect::<Assembly>())
+    let mut out = Vec::new();
+    out.extend(compile(lhs, ctx.clone())?);
+    out.push(line(Mov(StackIndex(si), Reg(RAX))));
+    out.extend(compile(rhs, ctx.with_si(si + 1))?);
+    out.extend(body.into_iter().map(line));
+
+    Ok(out)
 }
 
-fn overflow_check() -> Instr {
-    Jo("exit_overflow".to_string())
+fn line(i: Instr) -> AssemblyLine {
+    AssemblyLine::Instruction(i)
+}
+
+fn append_overflow_check(instrs: &mut Vec<Instr>) {
+    instrs.push(Jo(EXIT_OVERFLOW.to_owned()));
 }
 
 fn compile_unary(op: UOper, rhs: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
     use Instr::*;
     use Val::Reg;
 
+    let mut body = Vec::new();
     let op = match op {
         UOper::Add1 => {
-            let mut num_chk = generate_check_num(Reg(RAX));
+            append_check_num(Reg(RAX), &mut body);
             // imm is 2 to account for tag
-            num_chk.push(Add(Reg(RAX), Imm(2)));
-            num_chk.push(overflow_check());
-            num_chk
+            body.push(Add(Reg(RAX), Imm(2)));
+            append_overflow_check(&mut body);
+            body
         },
         UOper::Sub1 => {
-            let mut num_chk = generate_check_num(Reg(RAX));
+            append_check_num(Reg(RAX), &mut body);
             // imm is 2 to account for tag
-            num_chk.push(Sub(Reg(RAX), Imm(2)));
-            num_chk.push(overflow_check());
-            num_chk
+            body.push(Sub(Reg(RAX), Imm(2)));
+            append_overflow_check(&mut body);
+            body
         },
-        UOper::IsNum => vec![
+        UOper::IsNum => {
+            append_check_num(Reg(RAX), &mut body);
             // test bit zero
-            Bt(Reg(RAX), Imm(0)),
-            // if it's 1 then not a number, move false into RAX
-            Cmovc(RAX, FALSE),
-            // if it's 0 then it is a number, move true into RAX
-            Cmovnc(RAX, TRUE),
-        ],
-        UOper::IsBool => vec![
+            body.extend([
+                Test(Reg(RAX), Imm(1)),
+                // if it's 1 then not a number, move false into RAX
+                Cmovnz(RAX, FALSE),
+                // if it's 0 then it is a number, move true into RAX
+                Cmovz(RAX, TRUE),
+            ]);
+            body
+        },
+        UOper::IsBool => {
+            append_check_num(Reg(RAX), &mut body);
             // test bit zero
-            Bt(Reg(RAX), Imm(0)),
-            // if it's 1 then it is a bool, move true into RAX
-            Cmovc(RAX, TRUE),
-            // if it's 0 then it is a number, move false into RAX
-            Cmovnc(RAX, FALSE),
-        ],
+            body.extend([
+                Test(Reg(RAX), Imm(1)),
+                // if and result is not zero, then it is a bool
+                Cmovnz(RAX, TRUE),
+                // if and result is zero, then it is a number
+                Cmovz(RAX, FALSE),
+            ]);
+            body
+        },
     };
-    let op = op.into_iter().map(|v| AssemblyLine::Instruction(v));
-    
+
+    let op = op.into_iter().map(line);
     Ok(compile(rhs, ctx)?
         .into_iter()
         .chain(op)
         .collect())
 }
 
-fn map_to_lines(a: Vec<Instr>) -> Assembly {
-    a.into_iter().map(|v| AssemblyLine::Instruction(v)).collect()
-}
-
-fn compile_if(cond: Box<Expr>, if_arm: Box<Expr>, else_arm: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
+fn compile_if(cond: Box<Expr>, then_arm: Box<Expr>, else_arm: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
     use AssemblyLine::Label;
     // make room for our labels
     let li = inc_li();
-
-    let mut cond_instrs = compile(cond, ctx.clone())?;
-    let if_instrs = compile(if_arm, ctx.clone())?;
-    let else_instrs = compile(else_arm, ctx)?;
- 
-    let if_body_str = format!("if_body_{li}");
-    let else_body_str = format!("else_body_{li}");
-    let end_body_str = format!("end_{li}");
-
     let i = |v| AssemblyLine::Instruction(v);
 
-    cond_instrs.extend(map_to_lines(gen_check_bool(self::Reg(RAX))));
-    cond_instrs.extend(vec![
-        i(Bt(Reg(RAX), Imm(1))),
-        i(Jnc(else_body_str.clone())),
-        Label(if_body_str),
-    ]);
-    cond_instrs.extend(if_instrs);
-    cond_instrs.extend(vec![
-        i(Jmp(end_body_str.clone())),
-        Label(else_body_str),
-    ]);
-    cond_instrs.extend(else_instrs);
-    cond_instrs.push(Label(end_body_str));
-    Ok(cond_instrs)
+    // new implementation
+    let mut out = Vec::new();
+    let else_label = format!("else_{li}");
+    let end_label = format!("endif_{li}");
+
+    out.extend(compile(cond, ctx.clone())?); // insert condition
+    // spec says values other than false should go down "then..." branch
+    // so remove bool check and just let Cmp/Je take care of it
+    // append_check_bool(Reg(RAX), &mut out);
+    out.extend([    // add actual conditional
+        Cmp(Reg(RAX), FALSE),
+        Je(else_label.clone()),
+    ].map(line));
+    out.extend(compile(then_arm, ctx.clone())?);
+    out.push(i(Jmp(end_label.clone())));
+    out.push(Label(else_label));
+    out.extend(compile(else_arm, ctx.clone())?);
+    out.push(Label(end_label));
+
+    Ok(out)
 }
 
 fn compile_loop(body: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
@@ -332,17 +367,15 @@ fn compile_number(n: i64, _: Ctx) -> EmitResult<Assembly> {
 }
 
 fn compile_bool(b: bool, _: Ctx) -> EmitResult<Assembly> {
-    if b {
-        Ok(map_to_lines(vec![Mov(Reg(RAX), Imm(0b11))]))
-    }
-    else {
-        Ok(map_to_lines(vec![Mov(Reg(RAX), Imm(0b01))]))
-    }
+    Ok(vec![AssemblyLine::Instruction(match b {
+        true => Mov(Reg(RAX), TRUE),
+        false => Mov(Reg(RAX), FALSE),
+    })])
 }
 
 fn compile_input(_: Ctx) -> EmitResult<Assembly> {
     Ok(vec![AssemblyLine::Instruction(
-        Mov(Reg(RAX), StackIndex(1))
+        Mov(Reg(RAX), Reg(RDI))
     )])
 }
 
