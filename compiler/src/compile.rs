@@ -248,7 +248,6 @@ fn compile_unary(op: UOper, rhs: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
             body
         },
         UOper::IsNum => {
-            append_check_num(Reg(RAX), &mut body);
             // test bit zero
             body.extend([
                 Test(Reg(RAX), Imm(1)),
@@ -260,7 +259,6 @@ fn compile_unary(op: UOper, rhs: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
             body
         },
         UOper::IsBool => {
-            append_check_num(Reg(RAX), &mut body);
             // test bit zero
             body.extend([
                 Test(Reg(RAX), Imm(1)),
@@ -354,7 +352,7 @@ fn compile_set(id: String, expr: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
 
 fn compile_number(n: i64, _: Ctx) -> EmitResult<Assembly> {
     if n > 4611686018427387903 || n < -4611686018427387904 {
-        panic!("Invalid value {n}, out of range")
+        panic!("Invalid value {n}, out of range (overflow)")
     }
 
     let preserve_sign_mask = n & (1 << 63);
