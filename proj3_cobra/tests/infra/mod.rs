@@ -130,9 +130,7 @@ fn run(name: &str, input: Option<&str>) -> Result<String, String> {
     if output.status.success() {
         Ok(String::from_utf8(output.stdout).unwrap().trim().to_string())
     } else {
-        let stringed = String::from_utf8(output.stderr).unwrap().trim().to_string();
-        println!("error ouput was '{}'", stringed);
-        Err(stringed)
+        Err(String::from_utf8(output.stderr).unwrap().trim().to_string())
     }
 }
 
