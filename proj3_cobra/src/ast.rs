@@ -1,3 +1,6 @@
+use std::fmt;
+
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum UOper {
     Add1,
@@ -5,6 +8,18 @@ pub enum UOper {
     IsNum,
     IsBool,
 }
+
+impl fmt::Display for UOper {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            UOper::Add1 => write!(f, "+1"),
+            UOper::Sub1 => write!(f, "-1"),
+            UOper::IsNum => write!(f, "isNum"),
+            UOper::IsBool => write!(f, "isBool"),
+        }
+    }
+}
+
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum BOper {
@@ -17,6 +32,23 @@ pub enum BOper {
     Less,
     LessEqual,
 }
+
+
+impl fmt::Display for BOper {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BOper::Plus => write!(f, "+"),
+            BOper::Minus => write!(f, "-"),
+            BOper::Times => write!(f, "*"),
+            BOper::Equal => write!(f, "=="),
+            BOper::Greater => write!(f, ">"),
+            BOper::GreaterEqual => write!(f, ">="),
+            BOper::Less => write!(f, "<"),
+            BOper::LessEqual => write!(f, "<="),
+        }
+    }
+}
+
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Expr {
@@ -32,4 +64,38 @@ pub enum Expr {
     Set(String, Box<Expr>),
     Block(Vec<Expr>),
     Input,
+}
+
+impl fmt::Display for Expr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Expr::Number(n) => write!(f, "Number({})", n),
+            Expr::Boolean(b) => write!(f, "Boolean({})", b),
+            Expr::Id(id) => write!(f, "Id({})", id),
+            Expr::Let(vars, expr) => {
+                write!(f, "Let(")?;
+                for (i, (id, e)) in vars.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{} = {}", id, e)?;
+                }
+                write!(f, ") {}", expr)
+            }
+            Expr::UnOp(op, expr) => write!(f, "UnOp({}, {})", op, expr),
+            Expr::BinOp(op, lhs, rhs) => write!(f, "BinOp({}, {}, {})", op, lhs, rhs),
+            Expr::If(cond, then_expr, else_expr) => write!(f, "\nIf({}, {}, {})", cond, then_expr, else_expr),
+            Expr::Loop(body) => write!(f, "\nLoop({})", body),
+            Expr::Break(expr) => write!(f, "Break({})", expr),
+            Expr::Set(id, expr) => write!(f, "Set({}, {})", id, expr),
+            Expr::Block(exprs) => {
+                write!(f, "{{")?;
+                for e in exprs {
+                    write!(f, "\n  {}", e)?;
+                }
+                write!(f, "\n}}")
+            }
+            Expr::Input => write!(f, "Input"),
+        }
+    }
 }
