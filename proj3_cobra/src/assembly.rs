@@ -46,6 +46,7 @@ pub enum Reg {
     RAX,
     RBX,
     RCX,
+    RDI,
     RSP,
 }
 
@@ -56,6 +57,7 @@ impl Emit for Reg {
             RAX => "RAX",
             RBX => "RBX",
             RCX => "RCX",
+            RDI => "RDI",
             RSP => "RSP",
         }.to_owned()
     }
@@ -70,10 +72,12 @@ pub enum Instr {
     Add(Val, Val),
     Sub(Val, Val),
     IMul(Val, Val),
+    Xor(Val, Val),
+    Sar(Val),
     Cmp(Val, Val),
     Test(Val, Val),
     // bit test
-    Bt(Val, Val),
+//    Bt(Val, Val),
 
     Jne(String),
     Je(String),
@@ -84,6 +88,10 @@ pub enum Instr {
     Jmp(String),
     Jo(String),
 
+    /// conditional move ==
+    Cmove(Reg, Val),
+    /// conditional move !=
+    Cmovne(Reg, Val),
     /// conditional move >=
     Cmovge(Reg, Val),
     /// conditional move <=
@@ -96,7 +104,10 @@ pub enum Instr {
     Cmovc(Reg, Val),
     /// conditional move if CF == 0
     Cmovnc(Reg, Val),
-
+    /// conditional move if zero flat is set
+    Cmovz(Reg, Val),
+    /// conditional move if zero flag is not set
+    Cmovnz(Reg, Val),
 }
 
 impl Emit for Instr {
@@ -105,7 +116,7 @@ impl Emit for Instr {
         // an immediate, so we need to include an additional `mov` into a scratch register
         // for now, this is rdi
         let cmov_hack = |inst: &str, dest: &Reg, src: &Val| match src {
-            Val::Imm(i) => format!("mov rdi, {i}\n\t{inst} {}, rdi", dest.emit()),
+            Val::Imm(i) => format!("mov rbx, {i}\n\t{inst} {}, rbx", dest.emit()),
             _ => format!("{inst} {}, {}", dest.emit(), src.emit())
         };
 
@@ -117,13 +128,15 @@ impl Emit for Instr {
                 (Val::Reg(Reg::RAX), _) => format!("imul {}", src.emit()),
                 (_, Val::Reg(Reg::RAX)) => format!("imul {}", dest.emit()),
                 _ => panic!("this is that stupid bug you didn't fix coming back up -- neither IMul operand is RAX"),
-            }
+            },
+            Instr::Xor(val1, val2) => format!("xor {}, {}", val1.emit(), val2.emit()),
+            Instr::Sar(val) => format!("sar {}, 1", val.emit()),
             Instr::Cmp(lhs, rhs) => format!("cmp {d_cmp}, {s_cmp}", d_cmp=lhs.emit(),
                 s_cmp=rhs.emit()),
             Instr::Test(lhs, rhs) => format!("test {d_cmp}, {s_cmp}", d_cmp=lhs.emit(),
                 s_cmp=rhs.emit()),
-            Instr::Bt(word, bit) => format!("bt {d_cmp}, {s_cmp}", d_cmp=word.emit(),
-                s_cmp=bit.emit()),
+            // Instr::Bt(word, bit) => format!("bt {d_cmp}, {s_cmp}", d_cmp=word.emit(),
+            //     s_cmp=bit.emit()),
             Instr::Jne(l) => format!("jne {l}"),
             Instr::Je(l) => format!("je {l}"),
             Instr::Jz(l) => format!("jz {l}"),
@@ -132,12 +145,16 @@ impl Emit for Instr {
             Instr::Jo(l) => format!("jo {l}"),
             Instr::Jnc(l) => format!("jnc {l}"),
             Instr::Jmp(l) => format!("jmp {l}"),
+            Instr::Cmove(dest, src) => cmov_hack("cmove", dest, src),
+            Instr::Cmovne(dest, src) => cmov_hack("cmovne", dest, src),
             Instr::Cmovge(dest, src) => cmov_hack("cmovge", dest, src),
             Instr::Cmovle(dest, src) => cmov_hack("cmovle", dest, src),
             Instr::Cmovl(dest, src) =>  cmov_hack("cmovl", dest, src),
             Instr::Cmovg(dest, src) =>  cmov_hack("cmovg", dest, src),
             Instr::Cmovc(dest, src) =>  cmov_hack("cmovgc", dest, src),
             Instr::Cmovnc(dest, src) => cmov_hack("cmovnc", dest, src),
+            Instr::Cmovz(dest, src) => cmov_hack("cmovz", dest, src),
+            Instr::Cmovnz(dest, src) => cmov_hack("cmovnz", dest, src),
         }
     }
 }
