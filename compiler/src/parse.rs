@@ -510,4 +510,23 @@ mod test {
             plus(id("param1"), plus(id("param2"), id("param3"))))];
         assert_eq!(res.defs, expected_defs);
     }
+
+    #[test]
+    fn test_parse_two_fun_program() {
+        // second line of input is so I can parse to program correctly
+        // no other good way to parse fun, sadly
+        let input = r#"
+        (fun (testing param1 param2 param3) (+ param1 (+ param2 param3)))
+        (fun (testing2 bleh1 bleh2 bleh3) (+ bleh1 (+ bleh2 bleh3)))
+        (testing 1 2 3)
+        "#;
+        let res: Program = input.parse().unwrap();
+        let expected_defs = vec![
+            fun("testing", &["param1", "param2", "param3"],
+                plus(id("param1"), plus(id("param2"), id("param3")))),
+            fun("testing2", &["bleh1", "bleh2", "bleh3"],
+                plus(id("bleh1"), plus(id("bleh2"), id("bleh3")))),
+        ];
+        assert_eq!(res.defs, expected_defs);
+    }
 }

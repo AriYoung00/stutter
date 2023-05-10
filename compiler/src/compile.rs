@@ -125,18 +125,6 @@ fn append_check_eq_type(v1: Val, v2: Val, insts: &mut Vec<Instr>) {
     ])
 }
 
-fn append_check_bool(v: Val, instrs: &mut Assembly) {
-    if let Imm(_) = v {
-        panic!("generate_check_bool called with immediate in first pos");
-    }
-
-    instrs.extend([
-        // Bt(v, Imm(0)),
-        Test(v, Imm(1)),
-        Jz(EXIT_EXPECTED_BOOL.to_owned()),
-    ].map(line));
-}
-
 fn compile_binary(op: BOper, lhs: Box<Expr>, rhs: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
     let si = ctx.si;
 
