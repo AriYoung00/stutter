@@ -61,7 +61,9 @@ exit_err:
     call snek_error
 
 our_code_starts_here:
+    push RBX # preserve RBX
 {}
+    pop RBX  # preserve RBX
     ret
 ",
         result
