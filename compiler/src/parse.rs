@@ -1,12 +1,11 @@
-use crate::ast::{UOper, BOper, Expr, Program, FnDef};
+use crate::ast::{BOper, Expr, FnDef, Program, UOper};
 use crate::util::ParseResult;
 
-use sexp::Sexp;
 use sexp::Atom::*;
+use sexp::Sexp;
 
 use std::collections::HashSet;
 use std::str::FromStr;
-
 
 impl FromStr for UOper {
     type Err = String;
@@ -17,7 +16,7 @@ impl FromStr for UOper {
             "sub1" => Ok(Self::Sub1),
             "isnum" => Ok(Self::IsNum),
             "isbool" => Ok(Self::IsBool),
-            _      => Err(format!("Invalid unary operation '{}'", s)),
+            _ => Err(format!("Invalid unary operation '{}'", s)),
         }
     }
 }
@@ -27,19 +26,18 @@ impl FromStr for BOper {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "+"  => Ok(Self::Plus),
-            "-"  => Ok(Self::Minus),
-            "*"  => Ok(Self::Times),
-            "="  => Ok(Self::Equal),
-            ">"  => Ok(Self::Greater),
+            "+" => Ok(Self::Plus),
+            "-" => Ok(Self::Minus),
+            "*" => Ok(Self::Times),
+            "=" => Ok(Self::Equal),
+            ">" => Ok(Self::Greater),
             ">=" => Ok(Self::GreaterEqual),
-            "<"  => Ok(Self::Less),
+            "<" => Ok(Self::Less),
             "<=" => Ok(Self::LessEqual),
-            _    => Err(format!("Invalid binary operation '{}'", s)),
+            _ => Err(format!("Invalid binary operation '{}'", s)),
         }
     }
 }
-
 
 impl Expr {
     pub fn from_num(i: i64) -> Box<Self> {
@@ -77,7 +75,6 @@ impl Expr {
     }
 }
 
-
 /// This function takes a string reference, and attempts to determine if it is a valid name for a
 /// `let` binding or `fun` declaration. It does so by attempting to parse it as a unary operation,
 /// and then returning an error if it can be parsed as a unary operation, since all unary
@@ -85,7 +82,7 @@ impl Expr {
 fn try_name(name: &str) -> ParseResult<String> {
     if name.parse::<UOper>().is_ok() {
         Err(format!("Invalid identifier '{name}'"))
-    }
+    } 
     else {
         Ok(name.to_owned())
     }
@@ -117,8 +114,7 @@ fn parse_let(idents: &[Sexp], rhs: &Sexp) -> ParseResult<Box<Expr>> {
     for (name, _) in &maps {
         if seen.contains(&name) {
             return Err(format!("Duplicate binding '{name}'"));
-        }
-        else {
+        } else {
             seen.insert(name);
         }
     }
@@ -130,8 +126,7 @@ fn parse_let(idents: &[Sexp], rhs: &Sexp) -> ParseResult<Box<Expr>> {
 /// 3 as a binary operation. It will try to parse `op` as a [`BOper`], and then try to parse `lhs` and
 /// `rhs` as [`Box<Expr>`].
 fn parse_binary(op: &str, lhs: &Sexp, rhs: &Sexp) -> ParseResult<Box<Expr>> {
-    op
-        .parse()
+    op.parse()
         .and_then(|op| Ok(Expr::from_binary(op, parse_expr(lhs)?, parse_expr(rhs)?)))
 }
 
@@ -144,7 +139,6 @@ fn parse_unary(operator: &str, operand: &Sexp) -> ParseResult<Box<Expr>> {
         .and_then(|op| Ok(Expr::from_unary(op, parse_expr(operand)?)))
 }
 
-
 /// This method takse an operation and a list of S-expressions, and tries to determine what to
 /// parse the overall structure as. It checks for several keywords, attempting to dispatch to
 /// parsing methods for each of the expressions the keywords represent. Finally, it will attempt to
@@ -152,32 +146,38 @@ fn parse_unary(operator: &str, operand: &Sexp) -> ParseResult<Box<Expr>> {
 fn parse_list(op: &str, list: &[Sexp]) -> ParseResult<Box<Expr>> {
     match (op, list) {
         ("let", [Sexp::List(binds), rhs]) => parse_let(binds, rhs),
-        ("set!", [Sexp::Atom(S(name)), rhs]) => Ok(Expr::from_set(name.clone(), 
-                                                                  parse_expr(rhs)?)),
-        ("if", [cond, if_b, else_b]) => Ok(Expr::from_if(parse_expr(cond)?, 
-                parse_expr(if_b)?, parse_expr(else_b)?)),
-        ("loop", [rhs])  => Ok(Expr::from_loop(parse_expr(rhs)?)),
+        ("set!", [Sexp::Atom(S(name)), rhs]) => Ok(Expr::from_set(name.clone(), parse_expr(rhs)?)),
+        ("if", [cond, if_b, else_b]) => Ok(Expr::from_if(
+            parse_expr(cond)?,
+            parse_expr(if_b)?,
+            parse_expr(else_b)?,
+        )),
+        ("loop", [rhs]) => Ok(Expr::from_loop(parse_expr(rhs)?)),
         ("break", [rhs]) => Ok(Expr::from_break(parse_expr(rhs)?)),
         ("fun", _) => Err("Found 'fun' in an invalid context (not top-level)".into()),
 
-        // most generic parse steps come last, to prioritize matching more specific
-        (op, [a]) => parse_unary(&op, a),
-        (op, [lhs, rhs]) => parse_binary(&op, lhs, rhs),
-        _ => Err(format!("Invalid expression -- found {} operands (expected 1 or 2)", list.len())),
+        (op, [a])
+            if UOper::is_uoper(op) => parse_unary(op, a),
+        (op, [lhs, rhs])
+            if BOper::is_boper(op) => parse_binary(&op, lhs, rhs),
+
+        // we explicitly cover this case because it shouldn't happen
+        (op, []) => panic!("parse_list called with empty list, op={op}"),
+
+        (fn_name, args) => parse_fn_call(fn_name, args),
     }
 }
-
 
 /// This method will attempt to parse the given list of statements as a `block!` expression by
 /// iteratively mapping them into parsed expressions.
 fn parse_block(stmts: &[Sexp]) -> ParseResult<Box<Expr>> {
-    let stmts = stmts.iter()
+    let stmts = stmts
+        .iter()
         .map(parse_expr) // parse statements
         .map(|r| r.and_then(|v| Ok(*v))) // unbox statements
         .collect::<ParseResult<Vec<_>>>()?; // collect and check error
     Ok(Expr::from_block(stmts))
 }
-
 
 /// This memthod will attempt to parse a [`Sexp::Atom(S(_))`] which has been found on its own
 /// inside its parse tree level. This method does not consider attempting to parse `s` as a keyword
@@ -187,10 +187,9 @@ fn parse_string(s: &str) -> ParseResult<Box<Expr>> {
         "true" => Expr::from_bool(true),
         "false" => Expr::from_bool(false),
         "input" => Box::new(Expr::Input),
-        _ => Expr::from_id(s.to_owned())
+        _ => Expr::from_id(s.to_owned()),
     })
 }
-
 
 /// This method will attempt to parse the given list of statements as a [`FnDef`]. It does not
 /// return an expression, as [`FnDef`] is not a member of expression, and is not valid in all of
@@ -206,14 +205,14 @@ fn parse_fun(stmts: &[Sexp]) -> ParseResult<FnDef> {
     };
 
     let name: String = make_name(name_exp)?;
-    let args: Vec<_> = params_exps.into_iter()
+    let args: Vec<_> = params_exps
+        .into_iter()
         .map(make_name)
         .collect::<ParseResult<_>>()?;
     let body = parse_expr(body_exp)?;
 
-    Ok(FnDef { name, args, body, })
+    Ok(FnDef { name, args, body })
 }
-
 
 /// This method is the top-level dispatch method for attempting to parse an S-expression. It
 /// examines several attributes of the structure, and either attempts to directly parse it as an
@@ -224,17 +223,34 @@ fn parse_expr(sexp: &Sexp) -> ParseResult<Box<Expr>> {
         Sexp::Atom(I(n)) => Ok(Expr::from_num(*n)),
         Sexp::Atom(S(s)) => parse_string(s),
 
-        Sexp::List(v)    => match &v[..] {
-            [Sexp::Atom(S(s)), the_rest @ ..] if s == "block" =>  parse_block(the_rest),
+        Sexp::List(v) => match &v[..] {
+            [Sexp::Atom(S(s)), the_rest @ ..] if s == "block" => parse_block(the_rest),
             [Sexp::Atom(S(s)), the_rest @ ..] => parse_list(s, the_rest),
-            [first, _] => Err(format!("Invalid expression -- expected string atom first, got {:?}", first)),
-            stuff @ _  => Err(format!("Invalid expression -- got ambiguous structure {:?}", stuff))
+            [first, _] => Err(format!(
+                "Invalid expression -- expected string atom first, got {:?}",
+                first
+            )),
+            stuff @ _ => Err(format!(
+                "Invalid expression -- got ambiguous structure {:?}",
+                stuff
+            )),
         },
 
         _ => Err(format!("Invalid expression {}", sexp)),
     }
 }
 
+/// Parse a function call with `name` assumed to be the name of the function being called, and
+/// `args` the expressions which should be evaluated as the arguments to fn call
+fn parse_fn_call(name: &str, args: &[Sexp]) -> ParseResult<Box<Expr>> {
+    let args = args
+        .iter()
+        .map(parse_expr) // parse statements
+        .map(|r| r.and_then(|v| Ok(*v))) // unbox statements
+        .collect::<ParseResult<Vec<_>>>()?; // collect and check error
+
+    Ok(Box::new(Expr::Call(name.into(), args)))
+}
 
 impl FromStr for Box<Expr> {
     type Err = String;
@@ -246,7 +262,6 @@ impl FromStr for Box<Expr> {
     }
 }
 
-
 /// This enum is a convenience type which is used to generically parse top-level statements into
 /// either function definitions, or expressions. It is internal to `parse.rs`, and should not be
 /// public / used outside this file.
@@ -255,70 +270,76 @@ enum InterParseRes {
     Exp(Box<Expr>),
 }
 
-
 /// This function takes a list of S-Expressions which should be the top level expressions in the
 /// file which we are parsing. This means that it should be a list of expressions, each of which
-/// represent either a function definition, or a top-level expression to evaluate. 
+/// represent either a function definition, or a top-level expression to evaluate.
 ///
 /// This method will parse either of those things, and return an InterParseResult, which can be
 /// either of those things. The caller should handle partitioning the vector of InterParseRes into
 /// the expected structure of the program.
 fn parse_top_level(stuff: &[Sexp]) -> ParseResult<Vec<InterParseRes>> {
-    let parser = |exp: &Sexp| Ok(match exp {
-        // if it's a list
-        Sexp::List(l) => match &l[..] {
-            // check if the first element is the 'fun keyword'
-            // if it is, parse as a function definition
-            [Sexp::Atom(S(s)), the_rest @ ..] 
-                if s == "fun" => InterParseRes::Fn(parse_fun(the_rest)?),
+    let parser = |exp: &Sexp| {
+        Ok(match exp {
+            // if it's a list
+            Sexp::List(l) => match &l[..] {
+                // check if the first element is the 'fun keyword'
+                // if it is, parse as a function definition
+                [Sexp::Atom(S(s)), the_rest @ ..] if s == "fun" => {
+                    InterParseRes::Fn(parse_fun(the_rest)?)
+                }
+                // otherwise, parse as a normal expression
+                _ => InterParseRes::Exp(parse_expr(&exp)?),
+            },
             // otherwise, parse as a normal expression
             _ => InterParseRes::Exp(parse_expr(&exp)?),
-        },
-        // otherwise, parse as a normal expression
-        _ => InterParseRes::Exp(parse_expr(&exp)?),
-    });
+        })
+    };
 
     // do the parsing and transform output into correct shape
-    stuff.iter()
-        .map(parser)
-        .collect::<ParseResult<_>>()
+    stuff.iter().map(parser).collect::<ParseResult<_>>()
 }
-
 
 /// This trait should be used to parse the top-level file contents (as a string) into a Program
 impl FromStr for Program {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let exp = sexp::parse(s)
-            .map_err(|e| format!("Invalid S-expression syntax: {}", e))?;
+        let exp = sexp::parse(s).map_err(|e| format!("Invalid S-expression syntax: {}", e))?;
 
         let parts = match &exp {
             Sexp::Atom(_) => vec![InterParseRes::Exp(parse_expr(&exp)?)],
             Sexp::List(l) => parse_top_level(l)?,
         };
 
-        let (defs, top_lvl): (Vec<_>, Vec<_>) = parts.into_iter().partition(|e| matches!(e, InterParseRes::Fn(_)));
-        
+        let (defs, top_lvl): (Vec<_>, Vec<_>) = parts
+            .into_iter()
+            .partition(|e| matches!(e, InterParseRes::Fn(_)));
+
         if top_lvl.len() != 1 {
-            return Err(format!("Expected exactly one top level expression, got {}", top_lvl.len()));
+            return Err(format!(
+                "Expected exactly one top level expression, got {}",
+                top_lvl.len()
+            ));
         }
         let top_lvl = top_lvl.into_iter().next().unwrap();
 
-        let mapped: Vec<_> = defs.into_iter().map(|f| if let InterParseRes::Fn(func) = f { 
-            Ok(func)
-        } else { 
-            Err("Found expr in defs, this should never happen".to_owned())
-        }).collect::<ParseResult<_>>()?;
-
+        let mapped: Vec<_> = defs
+            .into_iter()
+            .map(|f| {
+                if let InterParseRes::Fn(func) = f {
+                    Ok(func)
+                } else {
+                    Err("Found expr in defs, this should never happen".to_owned())
+                }
+            })
+            .collect::<ParseResult<_>>()?;
 
         if let InterParseRes::Exp(e) = top_lvl {
-            Ok(Program{
+            Ok(Program {
                 defs: mapped,
                 main: e,
             })
-        }
-        else {
+        } else {
             Err("Found FnDef in top level expression, this should never happen".to_owned())
         }
     }
@@ -326,8 +347,11 @@ impl FromStr for Program {
 
 #[cfg(test)]
 mod test {
-    use crate::{parse::ParseResult, ast::{FnDef, Program}};
     use super::Expr;
+    use crate::{
+        ast::{FnDef, Program},
+        parse::ParseResult,
+    };
 
     type BE = Box<Expr>;
 
@@ -359,10 +383,14 @@ mod test {
         Expr::from_num(arg as i64)
     }
 
+    fn ebool(arg: bool) -> BE {
+        Expr::from_bool(arg)
+    }
+
     fn plus(lhs: BE, rhs: BE) -> BE {
         Expr::from_binary(super::BOper::Plus, lhs, rhs)
     }
-    
+
     fn minus(lhs: BE, rhs: BE) -> BE {
         Expr::from_binary(super::BOper::Minus, lhs, rhs)
     }
