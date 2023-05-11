@@ -424,14 +424,21 @@ mod test {
         Expr::from_binary(crate::ast::BOper::Equal, lhs, rhs)
     }
 
+    fn block(stmts: Vec<BE>) -> BE {
+        Expr::from_block(stmts.into_iter().map(|x| *x).collect())
+    }
+
     fn fun(name: &str, params: &[&str], body: BE) -> FnDef {
-        FnDef{
+        FnDef {
             name: name.to_owned(),
-            args: params.into_iter()
-                .map(|s| s.to_string())
-                .collect(),
+            args: params.into_iter().map(|s| s.to_string()).collect(),
             body,
         }
+    }
+
+    fn call(name: &str, params: Vec<BE>) -> BE {
+        let params = params.into_iter().map(|x| *x).collect();
+        Box::new(Expr::Call(name.into(), params))
     }
 
     #[test]
@@ -484,7 +491,7 @@ mod test {
         let res: BE = input.parse().unwrap();
         let expected = elet(
             vec![("a", *num(1)), ("b", *num(2)), ("c", *num(3))],
-            plus(id("a"), times(id("b"), add1(id("c"))))
+            plus(id("a"), times(id("b"), add1(id("c")))),
         );
         assert_eq!(res, expected);
     }
@@ -493,15 +500,28 @@ mod test {
     fn test_parse_if() {
         let input = "(if true (+ 1 2) (- 2 1))";
         let res: BE = input.parse().unwrap();
-        assert_eq!(res, eif(Expr::from_bool(true), plus(num(1), num(2)), minus(num(2), num(1))));
+        assert_eq!(
+            res,
+            eif(
+                Expr::from_bool(true),
+                plus(num(1), num(2)),
+                minus(num(2), num(1))
+            )
+        );
 
         let input = "(if (isbool 5) (<= 1 2) (>= 2 1))";
         let res: BE = input.parse().unwrap();
-        assert_eq!(res, eif(isbool(num(5)), leq(num(1), num(2)), geq(num(2), num(1))));
+        assert_eq!(
+            res,
+            eif(isbool(num(5)), leq(num(1), num(2)), geq(num(2), num(1)))
+        );
 
         let input = "(if (isbool (= 1 1)) (add1 5) (sub1 7))";
         let res: BE = input.parse().unwrap();
-        assert_eq!(res, eif(isbool(eq(num(1), num(1))), add1(num(5)), sub1(num(7))));
+        assert_eq!(
+            res,
+            eif(isbool(eq(num(1), num(1))), add1(num(5)), sub1(num(7)))
+        );
     }
 
     #[test]
@@ -515,7 +535,10 @@ mod test {
     fn test_parse_loop() {
         let input = "(loop (if (= 1 2) (break 1) (break 2)))";
         let res: BE = input.parse().unwrap();
-        assert_eq!(res, eloop(eif(eq(num(1), num(2)), ebreak(num(1)), ebreak(num(2)))));
+        assert_eq!(
+            res,
+            eloop(eif(eq(num(1), num(2)), ebreak(num(1)), ebreak(num(2))))
+        );
     }
 
     #[test]
@@ -534,8 +557,11 @@ mod test {
         (testing 1 2 3)
         "#;
         let res: Program = input.parse().unwrap();
-        let expected_defs = vec![fun("testing", &["param1", "param2", "param3"],
-            plus(id("param1"), plus(id("param2"), id("param3"))))];
+        let expected_defs = vec![fun(
+            "testing",
+            &["param1", "param2", "param3"],
+            plus(id("param1"), plus(id("param2"), id("param3"))),
+        )];
         assert_eq!(res.defs, expected_defs);
     }
 
@@ -550,11 +576,56 @@ mod test {
         "#;
         let res: Program = input.parse().unwrap();
         let expected_defs = vec![
-            fun("testing", &["param1", "param2", "param3"],
-                plus(id("param1"), plus(id("param2"), id("param3")))),
-            fun("testing2", &["bleh1", "bleh2", "bleh3"],
-                plus(id("bleh1"), plus(id("bleh2"), id("bleh3")))),
+            fun(
+                "testing",
+                &["param1", "param2", "param3"],
+                plus(id("param1"), plus(id("param2"), id("param3"))),
+            ),
+            fun(
+                "testing2",
+                &["bleh1", "bleh2", "bleh3"],
+                plus(id("bleh1"), plus(id("bleh2"), id("bleh3"))),
+            ),
         ];
         assert_eq!(res.defs, expected_defs);
+    }
+
+    #[test]
+    fn test_parse_one_arg_call() {
+        let input = "(fib 10)";
+        let res: BE = input.parse().unwrap();
+        assert_eq!(res, call("fib", vec![num(10)]));
+    }
+
+    #[test]
+    fn test_parse_multi_arg_call() {
+        let input = "(bleh false 10 35 true)";
+        let res: BE = input.parse().unwrap();
+        assert_eq!(
+            res,
+            call("bleh", vec![ebool(false), num(10), num(35), ebool(true)])
+        );
+    }
+
+
+    #[test]
+    fn test_parse_multi_function_call() {
+        let input = r#"
+            (block
+             (fib 10)
+             (test true 2 3)
+             (also true false false true false true true)
+            )
+        "#;
+        let res: BE = input.parse().unwrap();
+        assert_eq!(
+            res,
+            block(vec![
+                call("fib", vec![num(10)]),
+                call("test", vec![ebool(true), num(2), num(3)]),
+                call("also", vec![ebool(true), ebool(false),ebool(false), ebool(true), ebool(false), 
+                                  ebool(true), ebool(true)]),
+            ])
+        );
     }
 }
