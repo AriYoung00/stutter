@@ -441,7 +441,44 @@ fn compile_input(_: Ctx) -> EmitResult<Assembly> {
     )])
 }
 
-pub fn compile(expr: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
+fn compile_call(name: String, args: Vec<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
+    // this function will perform the following:
+    // 1. it will look up the function with name `name` in `ctx` and verify it exists
+    // 2. it will verify that the number of arguments in `args` matches the expected number of
+    //     arguments in `ctx`
+    // 3. it will decrement the stack pointer so that variables / temporaries in the current
+    //     context are not trampled by the call
+    // 4. it will push the arguments of this function call onto the stack from first to last
+    // 5. it will call the function using `call`
+    // 6. it will pop the arguments back of the stack
+    // 7. it will restore rsp to its previous value, so that after this point, stack lookups can
+    //     precede as they would have in the enclosing environment
+
+    let Some(ref fn_args) = ctx.fns.get(&name) else {
+        return Err(format!("Unable to find function named {name}"));
+    };
+
+    if fn_args.len() != args.len() {
+        return Err(format!("Found incorrect number of arguments for '{name}' -- expected {}, found {}",
+                fn_args.len(), args.len()));
+    };
+
+    let (new_si, mut res): (_, Assembly) = args.into_iter()
+        .try_fold((ctx.si, Vec::new()), |(si, mut instrs), expr| -> EmitResult<(i64, Vec<AssemblyLine>)> {
+            instrs.extend(compile_expr(Box::new(expr), ctx.clone().with_si(si))?);
+            instrs.push(Mov(StackIndex(si), Reg(RAX)).into());
+            Ok((si + 1, instrs))
+        })?;
+    
+    let ctx = ctx.with_si(new_si);
+    res.extend([
+        Sub(Reg(RSP), ctx.compute_offset()),
+        Call(format!("snek_fun_{name}")),
+        Add(Reg(RSP), ctx.compute_offset()),
+    ].map(line));
+
+    Ok(res)
+}
 
 pub fn compile_expr(expr: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
     use Expr::*;
@@ -452,6 +489,7 @@ pub fn compile_expr(expr: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
         Id(s) => compile_id(s, ctx),
         Let(ident, rhs) => compile_let(ident, rhs, ctx),
         Set(id, expr) => compile_set(id, expr, ctx),
+        Call(name, args) => compile_call(name, args, ctx),
 
         UnOp(op, rhs) => compile_unary(op, rhs, ctx),
         BinOp(op, lhs, rhs) => compile_binary(op, lhs, rhs, ctx),
@@ -464,3 +502,52 @@ pub fn compile_expr(expr: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
     }
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::e::*;
+
+
+    #[test]
+    fn test_compile_one_arg_call() {
+        let input = call("do_thing", vec![num(5)]);
+        let ctx = Ctx::new(0, None, im::HashMap::new(), 
+            im::hashmap!{ "do_thing".into() => vec!["arg".into()]});
+
+        let res = compile_expr(input, ctx).unwrap();
+        let expected = [
+            Mov(Reg(RAX), Imm(10)),
+            Mov(StackIndex(0), Reg(RAX)),
+            Sub(Reg(RSP), Imm(8)),
+            Call("snek_fun_do_thing".into()),
+            Add(Reg(RSP), Imm(8)),
+        ].map(line);
+        
+        assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn test_compile_multi_arg() {
+        let input = call("hello_world", vec![num(15), ebool(false), num(25)]);
+        // this time try a nonzeo stack index
+        let ctx = Ctx::new(10, None, im::HashMap::new(), im::hashmap! {
+            "hello_world".into() => vec!["a1".into(), "a2".into(), "a3".into()]
+        });
+
+        let res = compile_expr(input, ctx).unwrap();
+        let expected = [
+            Mov(Reg(RAX), Imm(30)),
+            Mov(StackIndex(10), Reg(RAX)),
+            Mov(Reg(RAX), Imm(1)),
+            Mov(StackIndex(11), Reg(RAX)),
+            Mov(Reg(RAX), Imm(50)),
+            Mov(StackIndex(12), Reg(RAX)),
+            Sub(Reg(RSP), Imm(8 * 13)),
+            Call("snek_fun_hello_world".into()),
+            Add(Reg(RSP), Imm(8 * 13)),
+        ].map(line);
+
+        assert_eq!(res, expected);
+    }
+}
