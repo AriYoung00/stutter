@@ -11,6 +11,18 @@ use Val::*;
 use lazy_static::lazy_static;
 
 
+lazy_static! {
+    static ref LI: Mutex<usize> = Mutex::new(0);
+}
+
+const FALSE: Val = Val::Imm(0b01);
+const TRUE: Val = Val::Imm(0b11);
+
+type EmitResult<T> = Result<T, String>;
+type Assembly = Vec<AssemblyLine>;
+
+
+
 #[derive(Clone)]
 pub struct Ctx {
     /// `si` represents the next stack index (with the stack being divided into word-sized chunks)
@@ -48,16 +60,6 @@ impl Ctx {
     pub fn vars(&self) -> &im::HashMap<String, usize> { &self.vars }
 }
 
-type EmitResult<T> = Result<T, String>;
-type Assembly = Vec<AssemblyLine>;
-
-
-lazy_static! {
-    static ref LI: Mutex<usize> = Mutex::new(0);
-}
-
-const FALSE: Val = Val::Imm(0b01);
-const TRUE: Val = Val::Imm(0b11);
 
 fn inc_li() -> usize {
     let mut li_guard = LI.lock().unwrap();
