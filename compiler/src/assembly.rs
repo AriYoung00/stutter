@@ -13,7 +13,7 @@ pub enum Val {
 
     /// stack index, will be multiplied by 8 to find actual position since we index the stack in
     /// 64-bit words
-    StackIndex(usize),
+    StackIndex(i64),
 }
 
 impl Display for Val {
