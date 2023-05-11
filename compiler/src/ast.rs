@@ -11,6 +11,15 @@ pub enum UOper {
     Print,
 }
 
+impl UOper {
+    pub fn is_uoper(s: &str) -> bool {
+        match s {
+            "add1" | "sub1" | "isNum" | "isBool" | "print" => true,
+            _ => false
+        }
+    }
+}
+
 impl fmt::Display for UOper {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -18,6 +27,7 @@ impl fmt::Display for UOper {
             UOper::Sub1 => write!(f, "-1"),
             UOper::IsNum => write!(f, "isNum"),
             UOper::IsBool => write!(f, "isBool"),
+            UOper::Print => write!(f, "print"),
         }
     }
 }
@@ -34,6 +44,16 @@ pub enum BOper {
     GreaterEqual,
     Less,
     LessEqual,
+}
+
+impl BOper {
+    pub fn is_boper(s: &str) -> bool {
+        match s {
+            "+" | "-" | "*" | "=" | ">" | ">="
+                | "<" | "<=" => true,
+            _ => false,
+        }
+    }
 }
 
 
@@ -67,6 +87,8 @@ pub enum Expr {
     Break(Box<Expr>),
     Set(String, Box<Expr>),
     Block(Vec<Expr>),
+
+    Call(String, Vec<Expr>),
     Input,
 }
 
@@ -116,6 +138,7 @@ impl fmt::Display for Expr {
                 write!(f, "\n}}")
             }
             Expr::Input => write!(f, "Input"),
+            Expr::Call(name, args) => write!(f, "Call({name}, {args:?})"),
         }
     }
 }
