@@ -20,12 +20,12 @@ pub struct Ctx {
 
     /// `current_loop_label` is the
     pub current_loop_label: Option<usize>,
-    pub vars: im::HashMap<String, usize>,
+    pub vars: im::HashMap<String, i64>,
 }
 
 #[allow(dead_code)]
 impl Ctx {
-    pub fn new(si: usize, li: Option<usize>, vars: im::HashMap<String, usize>) -> Self {
+    pub fn new(si: usize, li: Option<usize>, vars: im::HashMap<String, i64>) -> Self {
         Self {
             si, current_loop_label: li, vars
         }
@@ -39,7 +39,7 @@ impl Ctx {
         let li = Some(li);
         Ctx{si, current_loop_label: li, vars}
     }
-    pub fn with_vars(self, vars: im::HashMap<String, usize>) -> Self {
+    pub fn with_vars(self, vars: im::HashMap<String, i64>) -> Self {
         let Ctx{si, current_loop_label: li, ..} = self;
         Ctx{si, current_loop_label: li, vars}
     }
