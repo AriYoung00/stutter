@@ -215,6 +215,53 @@ fn append_overflow_check(instrs: &mut Vec<Instr>) {
     instrs.push(Jo(EXIT_OVERFLOW.to_owned()));
 }
 
+
+/// This method will append an "assembly script" which will ensure 16-byte stack alignment onto the
+/// end if `instrs`. It will also push the amount by which it had to adjust the stack alignment
+/// onto the stack. This should always be used in conjunction with [`append_stack_alignment_de_fix`]
+///
+/// *Tramples*: RAX
+#[allow(unused_variables)]
+fn append_stack_alignment_fix(instrs: &mut Vec<Instr>) {
+    // since we need to push an 8-byte value onto the stack, we need to check if it IS already
+    // aligned correctly, and add additional space if it is
+    // instrs.extend([
+    //     // zero RBX in preparation
+    //     And(Reg(RBX), Reg(RBX)),
+    //     Test(Reg(RSP), Imm(0xF)),
+    //     // if (RSP & 0xF) == 0 then it's already aligned
+    //     // so if it's already aligned, we want to add 8 to RSP
+    //     // so we do it here through some cleverness
+    //     Setz(BL),
+    //     // if already aligned, add an extra 8 bytes to stack pointer to preserve alignment after
+    //     // pushing offset (which we're about to do)
+    //     Mul(Reg(RBX), Imm(8)),
+    //     Add(Reg(RSP), Reg(RBX)),
+    //     // push 64 bit (8 byte) version of register onto stack
+    //     Push(Reg(RBX)),
+    // ]);
+
+    // for now, do nothing here
+}
+
+/// This method will append an "assembly scripts" onto the current program (represented by `instrs`)
+/// which will undo the effects of [`append_stack_alignment_fix`]. It pops one 64-bit value off the
+/// stack, and then substracts it from RSP. Note that no instructions which effect the stack should
+/// be run between [`append_stack_alignment_fix`] and this script.
+///
+/// *Tramples*: RAX
+#[allow(unused_variables)]
+fn append_stack_alignment_de_fix(instrs: &mut Vec<Instr>) {
+    // here we need to pop 8 bytes of the top of the stack
+    // and then subtract whatever value they held from RSP
+    // instrs.extend([
+    //     Pop(Reg(RAX)),
+    //     Sub(Reg(RSP), Reg(RAX)),
+    // ]);
+
+    // for now do nothing
+}
+
 fn compile_unary(op: UOper, rhs: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
     use Instr::*;
     use Val::Reg;
@@ -255,6 +302,30 @@ fn compile_unary(op: UOper, rhs: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
                 // if and result is zero, then it is a number
                 Cmovz(RAX, FALSE),
             ]);
+            body
+        },
+        UOper::Print => {
+            body.extend([
+                Push(Reg(RDI)), // preserve input value
+                Push(Reg(RAX)), // preserve RAX value
+                // preserve our stack
+                Sub(Reg(RSP), Imm(8 * ctx.si as i64)),
+            ]);
+
+            append_stack_alignment_fix(&mut body);
+            body.push(
+                Call(SNEK_PRINT.into())
+            );
+            append_stack_alignment_de_fix(&mut body);
+
+            body.extend([
+                // restore our stack
+                Add(Reg(RSP), Imm(8 * ctx.si as i64)),
+                // restore registers
+                Pop(Reg(RAX)),
+                Pop(Reg(RDI)),
+            ]);
+
             body
         },
     };
