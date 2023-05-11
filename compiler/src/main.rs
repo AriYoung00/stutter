@@ -10,7 +10,7 @@ use std::io::prelude::*;
 
 use assembly::Emit;
 use ast::Expr;
-use compile::{compile, Ctx};
+use compile::{compile_expr, Ctx};
 use util::*;
 
 fn main() -> std::io::Result<()> {
@@ -26,8 +26,8 @@ fn main() -> std::io::Result<()> {
     let expr: Box<Expr> = contents.parse().unwrap();
 
     // start stack index at 2, since stack index 1 holds input
-    let init_ctx = Ctx::new(2, None, im::HashMap::new());
-    let result_asm = compile(expr, init_ctx).unwrap();
+    let init_ctx = Ctx::new(2, None, im::HashMap::new(), im::HashMap::new());
+    let result_asm = compile_expr(expr, init_ctx).unwrap();
     let result = result_asm.into_iter()
         .map(|l| l.emit())
         .fold("".to_owned(), |a, b| a + "\n" + &b);

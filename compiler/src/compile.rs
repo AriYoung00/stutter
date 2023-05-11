@@ -33,27 +33,28 @@ pub struct Ctx {
     /// `current_loop_label` is the
     pub current_loop_label: Option<usize>,
     pub vars: im::HashMap<String, i64>,
+    pub fns:  im::HashMap<String, Vec<String>>,
 }
 
 #[allow(dead_code)]
 impl Ctx {
-    pub fn new(si: i64, li: Option<usize>, vars: im::HashMap<String, i64>) -> Self {
+    pub fn new(si: i64, li: Option<usize>, vars: im::HashMap<String, i64>, fns: im::HashMap<String, Vec<String>>) -> Self {
         Self {
-            si, current_loop_label: li, vars
+            si, current_loop_label: li, vars, fns
         }
     }
     pub fn with_si(self, si: i64) -> Self {
-        let Ctx{current_loop_label, vars, ..} = self;
-        Ctx{si, current_loop_label, vars}
+        let Ctx{current_loop_label, vars, fns, ..} = self;
+        Ctx{si, current_loop_label, vars, fns}
     }
     pub fn with_li(self, li: usize) -> Self {
-        let Ctx{si, vars, ..} = self;
+        let Ctx{si, vars, fns, ..} = self;
         let li = Some(li);
-        Ctx{si, current_loop_label: li, vars}
+        Ctx{si, current_loop_label: li, vars, fns}
     }
     pub fn with_vars(self, vars: im::HashMap<String, i64>) -> Self {
-        let Ctx{si, current_loop_label: li, ..} = self;
-        Ctx{si, current_loop_label: li, vars}
+        let Ctx{si, current_loop_label: li, fns, ..} = self;
+        Ctx{si, current_loop_label: li, vars, fns}
     }
     pub fn si(&self) -> i64 { self.si }
     pub fn li(&self) -> Option<usize> { self.current_loop_label }
@@ -82,11 +83,11 @@ fn compile_id(ident: String, ctx: Ctx) -> EmitResult<Assembly> {
 }
 
 fn compile_let(idents: Vec<(String, Expr)>, rhs: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
-    let Ctx{mut si, current_loop_label: li, mut vars} = ctx;
+    let Ctx{mut si, current_loop_label: li, mut vars, fns} = ctx;
     let mut instrs = Vec::new();
 
     for (ident, expr) in idents {
-        let eval_res = compile(Box::new(expr), Ctx::new(si, li, vars.clone()))?;
+        let eval_res = compile_expr(Box::new(expr), Ctx::new(si, li, vars.clone(), fns.clone()))?;
 
         instrs.extend(eval_res);
         instrs.push(AssemblyLine::Instruction(Mov(StackIndex(si), Reg(RAX))));
@@ -95,7 +96,7 @@ fn compile_let(idents: Vec<(String, Expr)>, rhs: Box<Expr>, ctx: Ctx) -> EmitRes
         si += 1;
     }
 
-    let rhs_res = compile(rhs, Ctx::new(si, li, vars))?;
+    let rhs_res = compile_expr(rhs, Ctx::new(si, li, vars, fns))?;
     instrs.extend(rhs_res);
     Ok(instrs)
 }
@@ -201,9 +202,9 @@ fn compile_binary(op: BOper, lhs: Box<Expr>, rhs: Box<Expr>, ctx: Ctx) -> EmitRe
     };
 
     let mut out = Vec::new();
-    out.extend(compile(lhs, ctx.clone())?);
+    out.extend(compile_expr(lhs, ctx.clone())?);
     out.push(line(Mov(StackIndex(si), Reg(RAX))));
-    out.extend(compile(rhs, ctx.with_si(si + 1))?);
+    out.extend(compile_expr(rhs, ctx.with_si(si + 1))?);
     out.extend(body.into_iter().map(line));
 
     Ok(out)
@@ -333,7 +334,7 @@ fn compile_unary(op: UOper, rhs: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
     };
 
     let op = op.into_iter().map(line);
-    Ok(compile(rhs, ctx)?
+    Ok(compile_expr(rhs, ctx)?
         .into_iter()
         .chain(op)
         .collect())
@@ -350,7 +351,7 @@ fn compile_if(cond: Box<Expr>, then_arm: Box<Expr>, else_arm: Box<Expr>, ctx: Ct
     let else_label = format!("else_{li}");
     let end_label = format!("endif_{li}");
 
-    out.extend(compile(cond, ctx.clone())?); // insert condition
+    out.extend(compile_expr(cond, ctx.clone())?); // insert condition
     // spec says values other than false should go down "then..." branch
     // so remove bool check and just let Cmp/Je take care of it
     // append_check_bool(Reg(RAX), &mut out);
@@ -358,10 +359,10 @@ fn compile_if(cond: Box<Expr>, then_arm: Box<Expr>, else_arm: Box<Expr>, ctx: Ct
         Cmp(Reg(RAX), FALSE),
         Je(else_label.clone()),
     ].map(line));
-    out.extend(compile(then_arm, ctx.clone())?);
+    out.extend(compile_expr(then_arm, ctx.clone())?);
     out.push(i(Jmp(end_label.clone())));
     out.push(Label(else_label));
-    out.extend(compile(else_arm, ctx.clone())?);
+    out.extend(compile_expr(else_arm, ctx.clone())?);
     out.push(Label(end_label));
 
     Ok(out)
@@ -371,7 +372,7 @@ fn compile_loop(body: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
     use AssemblyLine::*;
 
     let li = inc_li();
-    let body_instrs = compile(body, ctx.with_li(li))?;
+    let body_instrs = compile_expr(body, ctx.with_li(li))?;
 
     let loop_top_label = format!("loop_start_{li}");
     let loop_bot_label = format!("loop_end_{li}");
@@ -388,14 +389,14 @@ fn compile_break(body: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
     // then, body result should be in rax, so just jump to
     let li = ctx.li().ok_or("Error: break outside of loop".to_string())?;
     let break_label = format!("loop_end_{}", li);
-    let mut body_instrs = compile(body, ctx)?;
+    let mut body_instrs = compile_expr(body, ctx)?;
     body_instrs.push(AssemblyLine::Instruction(Jmp(break_label)));
     Ok(body_instrs)
 }
 
 fn compile_block(body: Vec<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
     Ok(body.into_iter()
-        .map(|e| compile(Box::new(e), ctx.clone()))
+        .map(|e| compile_expr(Box::new(e), ctx.clone()))
         .collect::<EmitResult<Vec<_>>>()?
         .into_iter()
         .flatten()
@@ -406,7 +407,7 @@ fn compile_set(id: String, expr: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
     let vars = ctx.vars().clone();
     let idx = vars.get(&id).ok_or(format!("Unbound variable identifier {id}"))?;
 
-    let mut body_instrs = compile(expr, ctx)?;
+    let mut body_instrs = compile_expr(expr, ctx)?;
     body_instrs.push(AssemblyLine::Instruction(Mov(StackIndex(*idx), Reg(RAX))));
     Ok(body_instrs)
 }
@@ -439,6 +440,8 @@ fn compile_input(_: Ctx) -> EmitResult<Assembly> {
 }
 
 pub fn compile(expr: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
+
+pub fn compile_expr(expr: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
     use Expr::*;
     match *expr {
         Number(n) => compile_number(n, ctx),
