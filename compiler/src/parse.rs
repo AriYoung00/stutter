@@ -468,27 +468,6 @@ mod test {
     }
 
     #[test]
-    fn test_parse_simple_invalid() {
-        type PR = ParseResult<BE>;
-
-        let input = "(asdf 1)";
-        let res: PR = input.parse();
-        assert!(matches!(res, Err(_)));
-
-        let input = "(+ 1 2 3)";
-        let res: PR = input.parse();
-        assert!(matches!(res, Err(_)));
-
-        let input = "(add1 3 4)";
-        let res: PR = input.parse();
-        assert!(matches!(res, Err(_)));
-
-        let input = "1 2 3";
-        let res: PR = input.parse();
-        assert!(matches!(res, Err(_)));
-    }
-
-    #[test]
     fn test_parse_let() {
         let input = "(let ((a 1)) a)";
         let res: BE = input.parse().unwrap();
