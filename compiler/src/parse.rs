@@ -200,8 +200,12 @@ fn parse_fun(stmts: &[Sexp]) -> ParseResult<FnDef> {
         _ => return Err("Found something besides Atom(str) in fun name / param position".into()),
     };
 
-    let [name_exp, params_exps @ .., body_exp] = stmts else {
-        return Err("Not enough arguments in `fun` definition".into());
+    let [Sexp::List(name_and_params), body_exp] = stmts else {
+        return Err(format!("Expected (name param+) (body) in fn def, instead found {stmts:?}"));
+    };
+
+    let [name_exp, params_exps @ ..] = &name_and_params[..] else {
+        return Err(format!("unable to bind name and params from structure: {name_and_params:?}"));
     };
 
     let name: String = make_name(name_exp)?;
@@ -284,9 +288,8 @@ fn parse_top_level(stuff: &[Sexp]) -> ParseResult<Vec<InterParseRes>> {
             Sexp::List(l) => match &l[..] {
                 // check if the first element is the 'fun keyword'
                 // if it is, parse as a function definition
-                [Sexp::Atom(S(s)), the_rest @ ..] if s == "fun" => {
-                    InterParseRes::Fn(parse_fun(the_rest)?)
-                }
+                [Sexp::Atom(S(s)), the_rest @ ..] 
+                    if s == "fun" => InterParseRes::Fn(parse_fun(the_rest)?),
                 // otherwise, parse as a normal expression
                 _ => InterParseRes::Exp(parse_expr(&exp)?),
             },
@@ -304,7 +307,11 @@ impl FromStr for Program {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let exp = sexp::parse(s).map_err(|e| format!("Invalid S-expression syntax: {}", e))?;
+        // CHEAP CHEAP HACK OH GOD
+        let s = format!("({s})");
+        // this might not be necessary? not sure...
+
+        let exp = sexp::parse(&s).map_err(|e| format!("Invalid S-expression syntax: {}", e))?;
 
         let parts = match &exp {
             Sexp::Atom(_) => vec![InterParseRes::Exp(parse_expr(&exp)?)],
@@ -606,7 +613,6 @@ mod test {
             call("bleh", vec![ebool(false), num(10), num(35), ebool(true)])
         );
     }
-
 
     #[test]
     fn test_parse_multi_function_call() {
