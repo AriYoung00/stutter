@@ -14,7 +14,7 @@ pub enum UOper {
 impl UOper {
     pub fn is_uoper(s: &str) -> bool {
         match s {
-            "add1" | "sub1" | "isNum" | "isBool" | "print" => true,
+            "add1" | "sub1" | "isnum" | "isbool" | "print" => true,
             _ => false
         }
     }
