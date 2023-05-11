@@ -5,7 +5,7 @@ pub trait Emit {
 }
 
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Val {
     Reg(Reg),
 
@@ -30,7 +30,7 @@ impl Display for Val {
 }
 
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[allow(dead_code)]
 pub enum Reg {
     RAX,
@@ -71,7 +71,7 @@ impl Display for Reg {
 }
 
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[allow(dead_code)]
 /// This enum represents assembly instructions
 pub enum Instr {
@@ -196,6 +196,7 @@ impl Display for Instr {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum AssemblyLine {
     Instruction(Instr),
     Label(String),
@@ -211,4 +212,9 @@ impl Emit for AssemblyLine {
     }
 }
 
+impl From<Instr> for AssemblyLine {
+    fn from(value: Instr) -> Self {
+        AssemblyLine::Instruction(value)
+    }
+}
 
