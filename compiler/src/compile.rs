@@ -28,7 +28,7 @@ pub struct Ctx {
     /// `si` represents the next stack index (with the stack being divided into word-sized chunks)
     /// which can be written to. After being written to, it should be incremented when passed to
     /// future calls to `compile`
-    pub si: usize, 
+    pub si: i64, 
 
     /// `current_loop_label` is the
     pub current_loop_label: Option<usize>,
@@ -37,12 +37,12 @@ pub struct Ctx {
 
 #[allow(dead_code)]
 impl Ctx {
-    pub fn new(si: usize, li: Option<usize>, vars: im::HashMap<String, i64>) -> Self {
+    pub fn new(si: i64, li: Option<usize>, vars: im::HashMap<String, i64>) -> Self {
         Self {
             si, current_loop_label: li, vars
         }
     }
-    pub fn with_si(self, si: usize) -> Self {
+    pub fn with_si(self, si: i64) -> Self {
         let Ctx{current_loop_label, vars, ..} = self;
         Ctx{si, current_loop_label, vars}
     }
@@ -55,9 +55,9 @@ impl Ctx {
         let Ctx{si, current_loop_label: li, ..} = self;
         Ctx{si, current_loop_label: li, vars}
     }
-    pub fn si(&self) -> usize { self.si }
+    pub fn si(&self) -> i64 { self.si }
     pub fn li(&self) -> Option<usize> { self.current_loop_label }
-    pub fn vars(&self) -> &im::HashMap<String, usize> { &self.vars }
+    pub fn vars(&self) -> &im::HashMap<String, i64> { &self.vars }
 }
 
 
