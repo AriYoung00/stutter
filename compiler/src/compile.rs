@@ -59,6 +59,8 @@ impl Ctx {
     pub fn si(&self) -> i64 { self.si }
     pub fn li(&self) -> Option<usize> { self.current_loop_label }
     pub fn vars(&self) -> &im::HashMap<String, i64> { &self.vars }
+
+    pub fn compute_offset(&self) -> Val { Imm(self.si * 8) }
 }
 
 
@@ -211,7 +213,7 @@ fn compile_binary(op: BOper, lhs: Box<Expr>, rhs: Box<Expr>, ctx: Ctx) -> EmitRe
 }
 
 fn line(i: Instr) -> AssemblyLine {
-    AssemblyLine::Instruction(i)
+    i.into()
 }
 
 fn append_overflow_check(instrs: &mut Vec<Instr>) {
