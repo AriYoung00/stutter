@@ -9,8 +9,8 @@ use std::fs::File;
 use std::io::prelude::*;
 
 use assembly::Emit;
-use ast::Expr;
-use compile::{compile_expr, Ctx};
+use ast::Program;
+use compile::compile_program;
 use util::*;
 
 fn main() -> std::io::Result<()> {
@@ -23,11 +23,9 @@ fn main() -> std::io::Result<()> {
     let mut contents = String::new();
     infile.read_to_string(&mut contents)?;
 
-    let expr: Box<Expr> = contents.parse().unwrap();
+    let prog: Program = contents.parse().unwrap();
 
-    // start stack index at 2, since stack index 1 holds input
-    let init_ctx = Ctx::new(2, None, im::HashMap::new(), im::HashMap::new());
-    let result_asm = compile_expr(expr, init_ctx).unwrap();
+    let result_asm = compile_program(prog).unwrap();
     let result = result_asm.into_iter()
         .map(|l| l.emit())
         .fold("".to_owned(), |a, b| a + "\n" + &b);
