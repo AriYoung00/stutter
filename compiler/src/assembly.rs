@@ -98,6 +98,7 @@ pub enum Instr {
     Jo(String),
 
     Call(String),
+    Ret,
 
     /// conditional move ==
     Cmove(Reg, Val),
@@ -169,6 +170,7 @@ impl Display for Instr {
             Instr::Jnc(l) => write!(f, "jnc {l}"),
             Instr::Jmp(l) => write!(f, "jmp {l}"),
             Instr::Call(l) => write!(f, "call {l}"),
+            Instr::Ret    => write!(f, "ret"),
 
             Instr::Cmove(dest, src)  => cmov_hack(f, "cmove",  dest, src),
             Instr::Cmovne(dest, src) => cmov_hack(f, "cmovne", dest, src),

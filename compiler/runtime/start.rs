@@ -29,12 +29,11 @@ pub extern "C" fn snek_print(val: i64) {
         3 => println!("true"),
         _ if (val & 0b01) == 1 
             => println!("attempted to print invalid value 0x{:x}", val),
-        _ => println("{}", val >> 1),
+        _ => println!("{}", val >> 1),
     };
 }
 
 fn parse_input(input: &str) -> i64 {
-    // TODO: parse the input string into internal value representation
     if input == "true" {
         3 // 0b11 = true
     }
