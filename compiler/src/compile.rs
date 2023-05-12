@@ -229,28 +229,28 @@ fn append_overflow_check(instrs: &mut Vec<Instr>) {
 /// end if `instrs`. It will also push the amount by which it had to adjust the stack alignment
 /// onto the stack. This should always be used in conjunction with [`append_stack_alignment_de_fix`]
 ///
-/// *Tramples*: RAX
+/// *Tramples*: RAX, RBX
 #[allow(unused_variables)]
 fn append_stack_alignment_fix(instrs: &mut Vec<Instr>) {
     // since we need to push an 8-byte value onto the stack, we need to check if it IS already
     // aligned correctly, and add additional space if it is
-    // instrs.extend([
-    //     // zero RBX in preparation
-    //     And(Reg(RBX), Reg(RBX)),
-    //     Test(Reg(RSP), Imm(0xF)),
-    //     // if (RSP & 0xF) == 0 then it's already aligned
-    //     // so if it's already aligned, we want to add 8 to RSP
-    //     // so we do it here through some cleverness
-    //     Setz(BL),
-    //     // if already aligned, add an extra 8 bytes to stack pointer to preserve alignment after
-    //     // pushing offset (which we're about to do)
-    //     Mul(Reg(RBX), Imm(8)),
-    //     Add(Reg(RSP), Reg(RBX)),
-    //     // push 64 bit (8 byte) version of register onto stack
-    //     Push(Reg(RBX)),
-    // ]);
-
-    // for now, do nothing here
+    // TODO: consider changing this to a version that uses jumps. This is disgusting.
+    instrs.extend([
+        // zero RBX in preparation
+        And(Reg(RAX), Reg(RAX)),
+        Test(Reg(RSP), Imm(0xF)),
+        // if (RSP & 0xF) == 0 then it's already aligned
+        // so if it's already aligned, we want to add 8 to RSP
+        // so we do it here through some cleverness
+        Setz(AL),
+        // if already aligned, add an extra 8 bytes to stack pointer to preserve alignment after
+        // pushing offset (which we're about to do)
+        Mov(Reg(RBX), Imm(8)),
+        Mul(Reg(RAX), Reg(RBX)),
+        Sub(Reg(RSP), Reg(RAX)),
+        // push 64 bit (8 byte) version of register onto stack
+        Push(Reg(RAX)),
+    ]);
 }
 
 /// This method will append an "assembly scripts" onto the current program (represented by `instrs`)
@@ -263,12 +263,10 @@ fn append_stack_alignment_fix(instrs: &mut Vec<Instr>) {
 fn append_stack_alignment_de_fix(instrs: &mut Vec<Instr>) {
     // here we need to pop 8 bytes of the top of the stack
     // and then subtract whatever value they held from RSP
-    // instrs.extend([
-    //     Pop(Reg(RAX)),
-    //     Sub(Reg(RSP), Reg(RAX)),
-    // ]);
-
-    // for now do nothing
+    instrs.extend([
+        Pop(Reg(RAX)),
+        Add(Reg(RSP), Reg(RAX)),
+    ]);
 }
 
 fn compile_unary(op: UOper, rhs: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
@@ -546,15 +544,15 @@ pub fn compile_program(prog: Program) -> EmitResult<Assembly> {
     // 4. prepend the compiled function definitions to main
     // 5. return the result of doing so
     
-    let Program { defs, main } = prog;
+    let Program { functions, main } = prog;
 
     let mut fn_list = im::HashMap::new();
-    for f in &defs {
+    for f in &functions {
         fn_list.insert(f.name.clone(), f.args.clone());
     }
 
     let ctx = Ctx::new(2, None, im::HashMap::new(), fn_list);
-    let defs_compiled: Vec<_> = defs.into_iter()
+    let defs_compiled: Vec<_> = functions.into_iter()
         .map(|x| compile_fun_def(x, ctx.clone()))
         .collect::<EmitResult<Vec<_>>>()?
         .into_iter()

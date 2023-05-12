@@ -104,7 +104,7 @@ pub struct FnDef {
 /// This struct represents the type and shape of a valid top-level program
 #[derive(Debug, PartialEq, Eq)]
 pub struct Program {
-    pub defs: Vec<FnDef>,
+    pub functions: Vec<FnDef>,
     pub main: Box<Expr>,
 }
 

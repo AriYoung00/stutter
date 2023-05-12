@@ -175,9 +175,6 @@ fn parse_list(op: &str, list: &[Sexp]) -> ParseResult<Box<Expr>> {
         (op, [lhs, rhs])
             if BOper::is_boper(op) => parse_binary(&op, lhs, rhs),
 
-        // we explicitly cover this case because it shouldn't happen
-        (op, []) => panic!("parse_list called with empty list, op={op}"),
-
         (fn_name, args) => parse_fn_call(fn_name, args),
     }
 }
@@ -185,6 +182,10 @@ fn parse_list(op: &str, list: &[Sexp]) -> ParseResult<Box<Expr>> {
 /// This method will attempt to parse the given list of statements as a `block!` expression by
 /// iteratively mapping them into parsed expressions.
 fn parse_block(stmts: &[Sexp]) -> ParseResult<Box<Expr>> {
+    if stmts.is_empty() {
+        return Err("Invalid block: empty body".into());
+    }
+
     let stmts = stmts
         .iter()
         .map(parse_expr) // parse statements
@@ -303,13 +304,14 @@ fn parse_expr(sexp: &Sexp) -> ParseResult<Box<Expr>> {
 /// Parse a function call with `name` assumed to be the name of the function being called, and
 /// `args` the expressions which should be evaluated as the arguments to fn call
 fn parse_fn_call(name: &str, args: &[Sexp]) -> ParseResult<Box<Expr>> {
+    let name = try_name(name)?;
     let args = args
         .iter()
         .map(parse_expr) // parse statements
         .map(|r| r.and_then(|v| Ok(*v))) // unbox statements
         .collect::<ParseResult<Vec<_>>>()?; // collect and check error
 
-    Ok(Box::new(Expr::Call(name.into(), args)))
+    Ok(Box::new(Expr::Call(name, args)))
 }
 
 impl FromStr for Box<Expr> {
@@ -386,7 +388,7 @@ impl FromStr for Program {
         }
         let top_lvl = top_lvl.into_iter().next().unwrap();
 
-        let mapped: Vec<_> = defs
+        let functions: Vec<_> = defs
             .into_iter()
             .map(|f| {
                 if let InterParseRes::Fn(func) = f {
@@ -397,10 +399,22 @@ impl FromStr for Program {
             })
             .collect::<ParseResult<_>>()?;
 
-        if let InterParseRes::Exp(e) = top_lvl {
+        let mut unique_funs = HashSet::new();
+        for f in functions.iter() {
+            let name = f.name.as_str();
+            if unique_funs.contains(name) {
+                return Err(format!("Found duplicate function with name `{name}`"));
+            }
+            else {
+                unique_funs.insert(name);
+            }
+        }
+
+
+        if let InterParseRes::Exp(main) = top_lvl {
             Ok(Program {
-                defs: mapped,
-                main: e,
+                functions,
+                main,
             })
         } else {
             Err("Found FnDef in top level expression, this should never happen".to_owned())
@@ -513,7 +527,7 @@ mod test {
             &["param1", "param2", "param3"],
             plus(id("param1"), plus(id("param2"), id("param3"))),
         )];
-        assert_eq!(res.defs, expected_defs);
+        assert_eq!(res.functions, expected_defs);
     }
 
     #[test]
@@ -538,7 +552,7 @@ mod test {
                 plus(id("bleh1"), plus(id("bleh2"), id("bleh3"))),
             ),
         ];
-        assert_eq!(res.defs, expected_defs);
+        assert_eq!(res.functions, expected_defs);
     }
 
     #[test]
