@@ -582,15 +582,26 @@ pub fn compile_program(prog: Program) -> EmitResult<Assembly> {
     }
 
     let ctx = Ctx::new(0, None, im::HashMap::new(), fn_list);
-    let mut defs_compiled: Vec<_> = defs.into_iter()
+    let defs_compiled: Vec<_> = defs.into_iter()
         .map(|x| compile_fun_def(x, ctx.clone()))
         .collect::<EmitResult<Vec<_>>>()?
         .into_iter()
         .flatten()
         .collect();
-    
-    defs_compiled.extend(compile_expr(main, ctx)?);
-    Ok(defs_compiled)
+    let main_compiled = compile_expr(main, ctx)?;
+
+    // put together result
+    let mut res = vec![
+        AssemblyLine::Label("our_code_starts_here".into()),
+        Push(Reg(RBX)).into(),
+    ];
+    res.extend(main_compiled);
+    res.extend([
+        Pop(Reg(RBX)).into(),
+        Ret.into(),
+    ]);
+    res.extend(defs_compiled);
+    Ok(res)
 }
 
 

@@ -36,6 +36,7 @@ fn main() -> std::io::Result<()> {
         "
 section .text
 extern snek_error
+extern snek_print
 global our_code_starts_here
 
 {EXIT_EXPECTED_NUM}:
@@ -57,15 +58,8 @@ global our_code_starts_here
 exit_err:
     push rsp
     call snek_error
-
-our_code_starts_here:
-    push RBX # preserve RBX
-{}
-    pop RBX  # preserve RBX
-    ret
-",
-        result
-    );
+{result}
+");
 
     let mut out_file = File::create(out_name)?;
     out_file.write_all(asm_program.as_bytes())?;
