@@ -57,7 +57,15 @@ global our_code_starts_here
 
 exit_err:
     push rsp
+    mov rax, rsp
+    and rax, 0xF
+    jz aligned
+
+    ; If it is not aligned, correct it
+    sub rsp, rax
+aligned:
     call snek_error
+
 {result}
 ");
 
