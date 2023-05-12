@@ -81,11 +81,24 @@ impl Expr {
 /// and then returning an error if it can be parsed as a unary operation, since all unary
 /// operations are invalid names.
 fn try_name(name: &str) -> ParseResult<String> {
-    if name.parse::<UOper>().is_ok() {
-        Err(format!("Invalid identifier '{name}'"))
-    } 
-    else {
-        Ok(name.to_owned())
+    match name {
+        "true"
+            | "false"
+            | "input"
+            | "fun"
+            | "let"
+            | "if"
+            | "set!"
+            | "block"
+            | "loop"
+            | "break" => Err(format!("Invalid identifier: {name} is a reserved keyword")),
+
+        _ if name.parse::<UOper>().is_ok()
+            => Err(format!("Invalid identifier: {name} is a unary operation")),
+        _ if name.parse::<BOper>().is_ok()
+            => Err(format!("Invalid identifier: {name} is a binary operation")),
+
+        _ => Ok(name.into())
     }
 }
 
