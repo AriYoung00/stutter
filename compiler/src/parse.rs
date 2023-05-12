@@ -16,6 +16,7 @@ impl FromStr for UOper {
             "sub1" => Ok(Self::Sub1),
             "isnum" => Ok(Self::IsNum),
             "isbool" => Ok(Self::IsBool),
+            "print" => Ok(Self::Print),
             _ => Err(format!("Invalid unary operation '{}'", s)),
         }
     }
@@ -191,6 +192,39 @@ fn parse_string(s: &str) -> ParseResult<Box<Expr>> {
     })
 }
 
+/// This method will check if the given expression or any of its sub-expressions contain the "input"
+/// operator.
+fn contains_input(ast: &Box<Expr>) -> bool {
+    match **ast {
+        Expr::Number(_) => false,
+        Expr::Boolean(_) => false,
+        Expr::Id(_) => false,
+        Expr::Input => true,
+
+        Expr::BinOp(_, ref sub1, ref sub2) =>
+            contains_input(sub1) || contains_input(sub2),
+        Expr::If(ref sub1, ref sub2, ref sub3) => 
+            contains_input(sub1) || contains_input(sub2) || contains_input(sub3),
+
+        Expr::UnOp(_, ref sub)
+            | Expr::Loop(ref sub)
+            | Expr::Break(ref sub)
+            | Expr::Set(_, ref sub) => contains_input(sub),
+
+        Expr::Block(ref conts)
+            | Expr::Call(_, ref conts) => conts.iter()
+                .any(|sub| contains_input(&Box::new(sub.clone()))),
+
+        Expr::Let(ref binds, ref body) => {
+            let binds_contains_input = binds
+                .iter()
+                .any(|(_, sub)| contains_input(&Box::new(sub.clone())));
+
+            binds_contains_input || contains_input(body)
+        },
+    }
+}
+
 /// This method will attempt to parse the given list of statements as a [`FnDef`]. It does not
 /// return an expression, as [`FnDef`] is not a member of expression, and is not valid in all of
 /// the contexts where an [`Expr`] is within the AST / parse tree
@@ -214,6 +248,15 @@ fn parse_fun(stmts: &[Sexp]) -> ParseResult<FnDef> {
         .map(make_name)
         .collect::<ParseResult<_>>()?;
     let body = parse_expr(body_exp)?;
+
+    if contains_input(&body) {
+        return Err(format!("Found `input` in body of function '{name}'"));
+    }
+    
+    let unique_el: HashSet<&str> = HashSet::from_iter(args.iter().map(|s| s.as_str()));
+    if unique_el.len() != args.len() {
+        return Err(format!("Not all arguments in declaration of fun `{name}` are unique"));
+    }
 
     Ok(FnDef { name, args, body })
 }

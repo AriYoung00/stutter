@@ -503,37 +503,6 @@ pub fn compile_expr(expr: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
 }
 
 
-fn contains_input(ast: &Box<Expr>) -> bool {
-    match **ast {
-        Expr::Number(_) => false,
-        Expr::Boolean(_) => false,
-        Expr::Id(_) => false,
-        Expr::Input => true,
-
-        Expr::BinOp(_, ref sub1, ref sub2) =>
-            contains_input(sub1) || contains_input(sub2),
-        Expr::If(ref sub1, ref sub2, ref sub3) => 
-            contains_input(sub1) || contains_input(sub2) || contains_input(sub3),
-
-        Expr::UnOp(_, ref sub)
-            | Expr::Loop(ref sub)
-            | Expr::Break(ref sub)
-            | Expr::Set(_, ref sub) => contains_input(sub),
-
-        Expr::Block(ref conts)
-            | Expr::Call(_, ref conts) => conts.iter()
-                .any(|sub| contains_input(&Box::new(sub.clone()))),
-
-        Expr::Let(ref binds, ref body) => {
-            let binds_contains_input = binds
-                .iter()
-                .any(|(_, sub)| contains_input(&Box::new(sub.clone())));
-
-            binds_contains_input || contains_input(body)
-        },
-    }
-}
-
 fn compile_fun_def(def: FnDef, ctx: Ctx) -> EmitResult<Assembly> {
     // this function should:
     // 1. check to make sure the function body does not contain any instances of `input`
@@ -546,9 +515,6 @@ fn compile_fun_def(def: FnDef, ctx: Ctx) -> EmitResult<Assembly> {
     // 4. compile the body expression using the initial context
     // 5. return the function label and body in an `Assembly`
     let FnDef { name, args, body } = def;
-    if contains_input(&body) {
-        return Err(format!("Found `input` in body of function '{name}'"));
-    }
     
     // start from -2 to skip return pointer
     let mut var_idx = -2;
