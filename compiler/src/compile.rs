@@ -56,6 +56,10 @@ impl Ctx {
         let Ctx{si, current_loop_label: li, fns, ..} = self;
         Ctx{si, current_loop_label: li, vars, fns}
     }
+    pub fn add_vars(mut self, vars: im::HashMap<String, i64>) -> Self {
+        self.vars.extend(vars);
+        self
+    }
     pub fn si(&self) -> i64 { self.si }
     pub fn li(&self) -> Option<usize> { self.current_loop_label }
     pub fn vars(&self) -> &im::HashMap<String, i64> { &self.vars }
@@ -311,10 +315,10 @@ fn compile_unary(op: UOper, rhs: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
         },
         UOper::Print => {
             body.extend([
-                Push(Reg(RDI)), // preserve input value
-                Push(Reg(RAX)), // preserve RAX value
                 // preserve our stack
                 Sub(Reg(RSP), Imm(8 * ctx.si as i64)),
+                Push(Reg(RDI)), // preserve input value
+                Push(Reg(RAX)), // preserve RAX value
             ]);
 
             append_stack_alignment_fix(&mut body);
@@ -324,11 +328,11 @@ fn compile_unary(op: UOper, rhs: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
             append_stack_alignment_de_fix(&mut body);
 
             body.extend([
-                // restore our stack
-                Add(Reg(RSP), Imm(8 * ctx.si as i64)),
                 // restore registers
                 Pop(Reg(RAX)),
                 Pop(Reg(RDI)),
+                // restore our stack
+                Add(Reg(RSP), Imm(8 * ctx.si as i64)),
             ]);
 
             body
@@ -527,7 +531,8 @@ fn compile_fun_def(def: FnDef, ctx: Ctx) -> EmitResult<Assembly> {
     let mut res = vec![
         AssemblyLine::Label(format!("snek_fun_{name}")),
     ];
-    res.extend(compile_expr(body, ctx)?);
+    res.extend(compile_expr(body, ctx.add_vars(var_map))?);
+    res.push(AssemblyLine::Instruction(Ret));
     Ok(res)
 }
 
@@ -547,7 +552,7 @@ pub fn compile_program(prog: Program) -> EmitResult<Assembly> {
         fn_list.insert(f.name.clone(), f.args.clone());
     }
 
-    let ctx = Ctx::new(0, None, im::HashMap::new(), fn_list);
+    let ctx = Ctx::new(2, None, im::HashMap::new(), fn_list);
     let defs_compiled: Vec<_> = defs.into_iter()
         .map(|x| compile_fun_def(x, ctx.clone()))
         .collect::<EmitResult<Vec<_>>>()?
