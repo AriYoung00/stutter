@@ -319,6 +319,7 @@ fn compile_unary(op: UOper, rhs: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
                 Sub(Reg(RSP), Imm(8 * ctx.si as i64)),
                 Push(Reg(RDI)), // preserve input value
                 Push(Reg(RAX)), // preserve RAX value
+                Mov(Reg(RDI), Reg(RAX)) // set input to print
             ]);
 
             append_stack_alignment_fix(&mut body);
