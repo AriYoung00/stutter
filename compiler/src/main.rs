@@ -23,9 +23,9 @@ fn main() -> std::io::Result<()> {
     let mut contents = String::new();
     infile.read_to_string(&mut contents)?;
 
-    let prog: Program = contents.parse().unwrap();
+    let prog: Program = contents.parse().expect("[[invalid Invalid]]");
 
-    let result_asm = compile_program(prog).unwrap();
+    let result_asm = compile_program(prog).expect("[[invalid Invalid]]");
     let result = result_asm.into_iter()
         .map(|l| l.emit())
         .fold("".to_owned(), |a, b| a + "\n" + &b);
