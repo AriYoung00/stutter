@@ -10,8 +10,7 @@ pub type ParseResult<T> = Result<T, String>;
 #[cfg(test)]
 /// this module contains convenience functions for tersely constructing an AST inside of tests
 pub mod e {
-    use crate::Expr;
-    use crate::ast::{FnDef, UOper, BOper};
+    use crate::ast::{Expr, FnDef, UOper, BOper};
 
     pub type BE = Box<Expr>;
 

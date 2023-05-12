@@ -1,7 +1,7 @@
 use std::fmt;
 
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 /// This enum reprsents the types of valid unary operations
 pub enum UOper {
     Add1,
@@ -33,7 +33,7 @@ impl fmt::Display for UOper {
 }
 
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 /// This enum represents the types of valid binary operations
 pub enum BOper {
     Plus,
@@ -73,7 +73,7 @@ impl fmt::Display for BOper {
 }
 
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 /// This enum represents the types and shapes of valid expressions
 pub enum Expr {
     Number(i64),
