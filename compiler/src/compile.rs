@@ -503,6 +503,97 @@ pub fn compile_expr(expr: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
 }
 
 
+fn contains_input(ast: &Box<Expr>) -> bool {
+    match **ast {
+        Expr::Number(_) => false,
+        Expr::Boolean(_) => false,
+        Expr::Id(_) => false,
+        Expr::Input => true,
+
+        Expr::BinOp(_, ref sub1, ref sub2) =>
+            contains_input(sub1) || contains_input(sub2),
+        Expr::If(ref sub1, ref sub2, ref sub3) => 
+            contains_input(sub1) || contains_input(sub2) || contains_input(sub3),
+
+        Expr::UnOp(_, ref sub)
+            | Expr::Loop(ref sub)
+            | Expr::Break(ref sub)
+            | Expr::Set(_, ref sub) => contains_input(sub),
+
+        Expr::Block(ref conts)
+            | Expr::Call(_, ref conts) => conts.iter()
+                .any(|sub| contains_input(&Box::new(sub.clone()))),
+
+        Expr::Let(ref binds, ref body) => {
+            let binds_contains_input = binds
+                .iter()
+                .any(|(_, sub)| contains_input(&Box::new(sub.clone())));
+
+            binds_contains_input || contains_input(body)
+        },
+    }
+}
+
+fn compile_fun_def(def: FnDef, ctx: Ctx) -> EmitResult<Assembly> {
+    // this function should:
+    // 1. check to make sure the function body does not contain any instances of `input`
+    // 2. create variable mappings which correspond to the arguments to the function. these
+    //     mappings should:
+    //     a) be negative, to account for arguments being below RSP on function entry
+    //     b) start from the last argument and count down by 1 for each previous argument
+    //     c) account for the return pointer in the stack
+    // 3. update the passed-down context with said variable mappings
+    // 4. compile the body expression using the initial context
+    // 5. return the function label and body in an `Assembly`
+    let FnDef { name, args, body } = def;
+    if contains_input(&body) {
+        return Err(format!("Found `input` in body of function '{name}'"));
+    }
+    
+    // start from -2 to skip return pointer
+    let mut var_idx = -2;
+    let mut var_map = im::HashMap::new();
+    for arg in args.into_iter().rev() {
+        var_map.insert(arg, var_idx);
+        var_idx -= 1;
+    }
+
+    let mut res = vec![
+        AssemblyLine::Label(format!("snek_fun_{name}")),
+    ];
+    res.extend(compile_expr(body, ctx)?);
+    Ok(res)
+}
+
+
+pub fn compile_program(prog: Program) -> EmitResult<Assembly> {
+    // this function should:
+    // 1. compile the function definitions
+    // 2. create a context containing all of the function definitions
+    // 3. compile main using this context
+    // 4. prepend the compiled function definitions to main
+    // 5. return the result of doing so
+    
+    let Program { defs, main } = prog;
+
+    let mut fn_list = im::HashMap::new();
+    for f in &defs {
+        fn_list.insert(f.name.clone(), f.args.clone());
+    }
+
+    let ctx = Ctx::new(0, None, im::HashMap::new(), fn_list);
+    let mut defs_compiled: Vec<_> = defs.into_iter()
+        .map(|x| compile_fun_def(x, ctx.clone()))
+        .collect::<EmitResult<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect();
+    
+    defs_compiled.extend(compile_expr(main, ctx)?);
+    Ok(defs_compiled)
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
