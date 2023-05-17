@@ -1,0 +1,4 @@
+(block
+    (fun (hello a) (add1 a))
+    (hello 1)
+)

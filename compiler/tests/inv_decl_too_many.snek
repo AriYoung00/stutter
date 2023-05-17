@@ -1,0 +1,2 @@
+(fun (doThing a) (add1 a) (add1 a))
+(doThing 1)

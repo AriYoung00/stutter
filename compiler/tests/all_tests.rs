@@ -621,5 +621,41 @@ static_error_tests! {
         name: duplicate_fun,
         file: "duplicate_fun.snek",
         expected: "",
-    }
+    },
+    {
+        name: fun_no_exist,
+        file: "fun_no_exist.snek",
+        expected: "",
+    },
+    {
+        name: input_in_fun,
+        file: "input_in_fun.snek",
+        expected: "",
+    },
+    {
+        name: fun_in_body,
+        file: "fun_in_body.snek",
+        expected: "",
+    },
+    {
+        name: no_name_fun,
+        file: "no_name_fun.snek",
+        expected: "",
+    },
+    {
+        name: wrong_arg_count,
+        file: "wrong_arg_count.snek",
+        expected: "",
+    },
+    {
+        name: invalid_decl_no_body,
+        file: "invalid_decl_no_body.snek",
+        expected: "",
+    },
+    {
+        name: invalid_decl_too_many,
+        file: "invalid_decl_too_many.snek",
+        expected: "",
+    },
+
 }
