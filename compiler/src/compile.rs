@@ -28,7 +28,7 @@ pub struct Ctx {
     /// `si` represents the next stack index (with the stack being divided into word-sized chunks)
     /// which can be written to. After being written to, it should be incremented when passed to
     /// future calls to `compile`
-    pub si: i64, 
+    pub si: i64,
 
     /// `current_loop_label` is the
     pub current_loop_label: Option<usize>,
@@ -107,10 +107,10 @@ fn compile_let(idents: Vec<(String, Expr)>, rhs: Box<Expr>, ctx: Ctx) -> EmitRes
     Ok(instrs)
 }
 
-fn append_check_num(v: Val, insts: &mut Vec<Instr>) { 
+fn append_check_num(v: Val, insts: &mut Vec<Instr>) {
     use Instr::*;
     use Val::*;
-    
+
     if let Imm(_) = v {
         panic!("generate_check_num called with immediate in first pos");
     }
@@ -312,29 +312,57 @@ fn compile_unary(op: UOper, rhs: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
             body
         },
         UOper::Print => {
+//      exit_err:
+//          mov rax, rsp
+//          and rax, 0xF
+//          jz aligned
+//
+//          ; If it is not aligned, correct it
+//          sub rsp, rax
+//      aligned:
+            let alignment_label = format!("aligned_{}", inc_li());
+            let mut body = Vec::new();
             body.extend([
                 // preserve our stack
                 Sub(Reg(RSP), Imm(8 * ctx.si as i64)),
                 Push(Reg(RDI)), // preserve input value
                 Push(Reg(RAX)), // preserve RAX value
-                Mov(Reg(RDI), Reg(RAX)) // set input to print
-            ]);
+                Mov(Reg(RDI), Reg(RAX)), // set input to print
 
-            append_stack_alignment_fix(&mut body);
-            body.push(
-                Call(SNEK_PRINT.into())
-            );
-            append_stack_alignment_de_fix(&mut body);
+                // fix stack pointer
+                Mov(Reg(RAX), Reg(RSP)),
+                And(Reg(RAX), Imm(0xF)),
+                Jz(alignment_label.clone()),
+                Sub(Reg(RSP), Reg(RAX)),
+            ].map(line));
+            body.push(AssemblyLine::Label(alignment_label));
+
+            // append_stack_alignment_fix(&mut body);
+            body.extend([
+                // finish fixing stack pointer...
+                Push(Reg(RAX)),
+                Push(Reg(RAX)),
+                Call(SNEK_PRINT.into()),
+            ].map(line));
+            // append_stack_alignment_de_fix(&mut body);
 
             body.extend([
+                // un-fix stack pointer
+                Pop(Reg(RAX)),
+                Pop(Reg(RAX)),
+                Add(Reg(RSP), Reg(RAX)),
+
                 // restore registers
                 Pop(Reg(RAX)),
                 Pop(Reg(RDI)),
                 // restore our stack
                 Add(Reg(RSP), Imm(8 * ctx.si as i64)),
-            ]);
+            ].map(line));
 
-            body
+            return Ok(compile_expr(rhs, ctx)?
+                .into_iter()
+                .chain(body)
+                .collect());
         },
     };
 
@@ -472,7 +500,7 @@ fn compile_call(name: String, args: Vec<Expr>, ctx: Ctx) -> EmitResult<Assembly>
             instrs.push(Mov(StackIndex(si), Reg(RAX)).into());
             Ok((si + 1, instrs))
         })?;
-    
+
     let ctx = ctx.with_si(new_si);
     res.extend([
         Sub(Reg(RSP), ctx.compute_offset()),
@@ -518,7 +546,7 @@ fn compile_fun_def(def: FnDef, ctx: Ctx) -> EmitResult<Assembly> {
     // 4. compile the body expression using the initial context
     // 5. return the function label and body in an `Assembly`
     let FnDef { name, args, body } = def;
-    
+
     // start from -2 to skip return pointer
     let mut var_idx = -2;
     let mut var_map = im::HashMap::new();
@@ -543,7 +571,7 @@ pub fn compile_program(prog: Program) -> EmitResult<Assembly> {
     // 3. compile main using this context
     // 4. prepend the compiled function definitions to main
     // 5. return the result of doing so
-    
+
     let Program { functions, main } = prog;
 
     let mut fn_list = im::HashMap::new();
@@ -584,7 +612,7 @@ mod tests {
     #[test]
     fn test_compile_one_arg_call() {
         let input = call("do_thing", vec![num(5)]);
-        let ctx = Ctx::new(0, None, im::HashMap::new(), 
+        let ctx = Ctx::new(0, None, im::HashMap::new(),
             im::hashmap!{ "do_thing".into() => vec!["arg".into()]});
 
         let res = compile_expr(input, ctx).unwrap();
@@ -595,7 +623,7 @@ mod tests {
             Call("snek_fun_do_thing".into()),
             Add(Reg(RSP), Imm(8)),
         ].map(line);
-        
+
         assert_eq!(res, expected);
     }
 
