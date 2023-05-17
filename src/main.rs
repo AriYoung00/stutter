@@ -2,22 +2,39 @@ mod ast;
 mod assembly;
 mod parse;
 mod util;
-mod compile;
+mod x86;
 
-use std::env;
 use std::fs::File;
 use std::io::prelude::*;
 
+use clap::{Parser, ValueEnum};
+
 use assembly::Emit;
 use ast::Program;
-use compile::compile_program;
 use util::*;
 
-fn main() -> std::io::Result<()> {
-    let args: Vec<String> = env::args().collect();
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+enum Backend {
+    LLVM,
+    X86,
+}
 
-    let in_name = &args[1];
-    let out_name = &args[2];
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    pub input_file_name:  String,
+    pub output_file_name: String,
+
+    #[arg(long, short, value_enum, default_value_t=Backend::X86)]
+    pub backend: Backend
+}
+
+
+fn main() -> std::io::Result<()> {
+    let args = Cli::parse();
+
+    let in_name  = &args.input_file_name;
+    let out_name = &args.output_file_name;
 
     let mut infile = File::open(in_name)?;
     let mut contents = String::new();
@@ -25,12 +42,18 @@ fn main() -> std::io::Result<()> {
 
     let prog: Program = contents.parse().expect("[[invalid Invalid]]");
 
-    let result_asm = compile_program(prog).expect("[[invalid Invalid]]");
+    match args.backend {
+        Backend::X86  => emit_x86(prog, out_name),
+        Backend::LLVM => todo!(),
+    }
+}
+
+
+fn emit_x86(prog: Program, out_file_name: &str) -> std::io::Result<()> {
+    let result_asm = x86::compile_program(prog).expect("[[invalid Invalid]]");
     let result = result_asm.into_iter()
         .map(|l| l.emit())
         .fold("".to_owned(), |a, b| a + "\n" + &b);
-
-    
 
     let asm_program = format!(
         "
@@ -69,11 +92,12 @@ aligned:
 {result}
 ");
 
-    let mut out_file = File::create(out_name)?;
+    let mut out_file = File::create(out_file_name)?;
     out_file.write_all(asm_program.as_bytes())?;
 
     Ok(())
 }
+
 
 #[cfg(test)]
 mod test {
@@ -97,7 +121,7 @@ mod test {
             shifted | preserve_sign_mask// as u64
         }
     }
-    
+
     #[test]
     fn test_parse_num() {
         assert_eq!(parse_input("0"), 0);

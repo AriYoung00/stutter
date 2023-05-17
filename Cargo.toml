@@ -10,6 +10,7 @@ rust-version = "1.65"
 im = "15.1.0"
 sexp = "1.1.4"
 lazy_static = "1.4.0"
+clap = { version = "4.2.7", features = ["derive"] }
 
 [dev-dependencies]
 prettydiff = "0.6.4"
