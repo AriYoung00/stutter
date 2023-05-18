@@ -21,9 +21,8 @@ const TRUE: Val = Val::Imm(0b11);
 type Assembly = Vec<AssemblyLine>;
 
 
-
 #[derive(Clone)]
-pub struct Ctx {
+struct Ctx {
     /// `si` represents the next stack index (with the stack being divided into word-sized chunks)
     /// which can be written to. After being written to, it should be incremented when passed to
     /// future calls to `compile`
@@ -223,50 +222,6 @@ fn append_overflow_check(instrs: &mut Vec<Instr>) {
     instrs.push(Jo(EXIT_OVERFLOW.to_owned()));
 }
 
-
-/// This method will append an "assembly script" which will ensure 16-byte stack alignment onto the
-/// end if `instrs`. It will also push the amount by which it had to adjust the stack alignment
-/// onto the stack. This should always be used in conjunction with [`append_stack_alignment_de_fix`]
-///
-/// *Tramples*: RAX, RBX
-#[allow(unused_variables)]
-fn append_stack_alignment_fix(instrs: &mut Vec<Instr>) {
-    // since we need to push an 8-byte value onto the stack, we need to check if it IS already
-    // aligned correctly, and add additional space if it is
-    // TODO: consider changing this to a version that uses jumps. This is disgusting.
-    instrs.extend([
-        // zero RBX in preparation
-        And(Reg(RAX), Reg(RAX)),
-        Test(Reg(RSP), Imm(0xF)),
-        // if (RSP & 0xF) == 0 then it's already aligned
-        // so if it's already aligned, we want to add 8 to RSP
-        // so we do it here through some cleverness
-        Setz(AL),
-        // if already aligned, add an extra 8 bytes to stack pointer to preserve alignment after
-        // pushing offset (which we're about to do)
-        Mov(Reg(RBX), Imm(8)),
-        Mul(Reg(RAX), Reg(RBX)),
-        Sub(Reg(RSP), Reg(RAX)),
-        // push 64 bit (8 byte) version of register onto stack
-        Push(Reg(RAX)),
-    ]);
-}
-
-/// This method will append an "assembly scripts" onto the current program (represented by `instrs`)
-/// which will undo the effects of [`append_stack_alignment_fix`]. It pops one 64-bit value off the
-/// stack, and then substracts it from RSP. Note that no instructions which effect the stack should
-/// be run between [`append_stack_alignment_fix`] and this script.
-///
-/// *Tramples*: RAX
-#[allow(unused_variables)]
-fn append_stack_alignment_de_fix(instrs: &mut Vec<Instr>) {
-    // here we need to pop 8 bytes of the top of the stack
-    // and then subtract whatever value they held from RSP
-    instrs.extend([
-        Pop(Reg(RAX)),
-        Add(Reg(RSP), Reg(RAX)),
-    ]);
-}
 
 fn compile_unary(op: UOper, rhs: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
     use Instr::*;
@@ -510,7 +465,7 @@ fn compile_call(name: String, args: Vec<Expr>, ctx: Ctx) -> EmitResult<Assembly>
     Ok(res)
 }
 
-pub fn compile_expr(expr: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
+fn compile_expr(expr: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
     use Expr::*;
     match *expr {
         Number(n) => compile_number(n, ctx),
