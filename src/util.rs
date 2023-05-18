@@ -6,6 +6,8 @@ pub const EXIT_OVERFLOW: &str = "exit_overflow";
 pub const SNEK_PRINT: &str = "snek_print";
 
 pub type ParseResult<T> = Result<T, String>;
+pub type EmitResult<T>  = Result<T, String>;
+
 
 #[cfg(test)]
 /// this module contains convenience functions for tersely constructing an AST inside of tests

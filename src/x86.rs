@@ -18,7 +18,6 @@ lazy_static! {
 const FALSE: Val = Val::Imm(0b01);
 const TRUE: Val = Val::Imm(0b11);
 
-type EmitResult<T> = Result<T, String>;
 type Assembly = Vec<AssemblyLine>;
 
 
