@@ -130,8 +130,8 @@ aligned:
 #[allow(dead_code)]
 #[allow(unused_variables)]
 fn emit_llvm(prog: Program, out_file_name: &str, opt_level: OptimizationLevel) -> std::io::Result<()> {
-    let compiled = llvm::compile_program(prog, out_file_name, opt_level);
-    todo!()
+    let compiled = llvm::compile_program(prog, out_file_name, opt_level).unwrap();
+    Ok(())
 }
 
 
