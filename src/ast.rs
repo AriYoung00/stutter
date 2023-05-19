@@ -93,7 +93,7 @@ pub enum Expr {
 }
 
 /// This struct represents the type and shape of a valid function definition
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FnDef {
     pub name: String,
     pub args: Vec<String>,
