@@ -172,6 +172,7 @@ fn mk_path(name: &str, ext: Ext) -> PathBuf {
 }
 
 #[derive(Copy, Clone)]
+#[allow(dead_code)]
 enum Ext {
     Asm,
     Run,
