@@ -1,0 +1,25 @@
+(fun (make_point x y)
+    (tuple x y)
+)
+
+(fun (add_points a b)
+    (let (
+        (x (+ (index 1 a) (index 1 b)))
+        (y (+ (index 2 a) (index 2 b)))
+    )
+    (make_point x y))
+)
+
+(let (
+    (a (make_point 1 2))
+    (b (make_point 3 4))
+    (c (add_points a b))
+)
+(block
+    (print (index 1 a))
+    (print (index 2 a))
+    (print (index 1 b))
+    (print (index 2 b))
+    (print (index 1 c))
+    (print (index 2 c))))
+

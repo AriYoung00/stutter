@@ -1,0 +1,2 @@
+(let ((a (tuple 1 false)))
+    (index 3 a))

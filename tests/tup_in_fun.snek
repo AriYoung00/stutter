@@ -1,0 +1,5 @@
+(fun (doThing)
+    (let ((thing (tuple 69420 2 3)))
+        (print (index 1 thing))))
+
+(doThing)

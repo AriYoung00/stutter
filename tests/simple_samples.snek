@@ -1,0 +1,13 @@
+(let (
+    (a (tuple 1 2))
+    (b (tuple 99 100))
+    (c (tuple false 12))
+    (d (tuple (a b c))))
+        (block
+            (print (index 1 a))
+            (print (index 2 b))
+            (print (index 2 c))
+            (print (isbool (index 1 c)))
+            (print (isbool (index 2 c)))
+            (print (eq (index 2 d) b))
+        ))

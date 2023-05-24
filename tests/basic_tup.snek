@@ -1,0 +1,2 @@
+(let ((a (tuple 1 2)))
+    (index 2 a))

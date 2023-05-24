@@ -18,6 +18,7 @@ pub extern "C" fn snek_error(errcode: i64) {
         9 => "error - arithmetic overflow",
         10 => "invalid argument(s) - mismatched operand types",
         11 => "invalue argument - expected tuple",
+        12 => "tuple index out of bounds",
         _ => "an unknown error occurred",
     });
     std::process::exit(1);

@@ -1,0 +1,5 @@
+(let (
+(a (tuple 1 2))
+(b (tuple false true)))
+    (block!
+        (print (index 1 a))))
