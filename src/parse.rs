@@ -175,6 +175,16 @@ fn parse_list(op: &str, list: &[Sexp]) -> ParseResult<Box<Expr>> {
         (op, [lhs, rhs])
             if BOper::is_boper(op) => parse_binary(&op, lhs, rhs),
 
+        ("index", [lhs, rhs]) => Ok(Box::new(Expr::Index(parse_expr(lhs)?, parse_expr(rhs)?))),
+
+        ("tuple", vals) => Ok(Box::new(Expr::Tuple(
+                    vals.into_iter()
+                        .map(parse_expr)
+                        .map(|r| r
+                            .map(|v| *v))
+                        .collect::<ParseResult<Vec<_>>>()?
+                    ))),
+
         (fn_name, args) => parse_fn_call(fn_name, args),
     }
 }
@@ -202,6 +212,7 @@ fn parse_string(s: &str) -> ParseResult<Box<Expr>> {
         "true" => Expr::from_bool(true),
         "false" => Expr::from_bool(false),
         "input" => Box::new(Expr::Input),
+        "nil"   => Box::new(Expr::Nil),
         _ => Expr::from_id(s.to_owned()),
     })
 }
@@ -214,9 +225,11 @@ fn contains_input(ast: &Box<Expr>) -> bool {
         Expr::Boolean(_) => false,
         Expr::Id(_) => false,
         Expr::Input => true,
+        Expr::Nil   => false,
 
-        Expr::BinOp(_, ref sub1, ref sub2) =>
-            contains_input(sub1) || contains_input(sub2),
+        Expr::BinOp(_, ref sub1, ref sub2) 
+            | Expr::Index(ref sub1, ref sub2) =>
+                contains_input(sub1) || contains_input(sub2),
         Expr::If(ref sub1, ref sub2, ref sub3) => 
             contains_input(sub1) || contains_input(sub2) || contains_input(sub3),
 
@@ -226,7 +239,8 @@ fn contains_input(ast: &Box<Expr>) -> bool {
             | Expr::Set(_, ref sub) => contains_input(sub),
 
         Expr::Block(ref conts)
-            | Expr::Call(_, ref conts) => conts.iter()
+            | Expr::Call(_, ref conts)
+            | Expr::Tuple(ref conts) => conts.iter()
                 .any(|sub| contains_input(&Box::new(sub.clone()))),
 
         Expr::Let(ref binds, ref body) => {
@@ -433,6 +447,27 @@ impl FromStr for Program {
 mod test {
     use crate::{util::e::*, ast::Expr};
     use crate::parse::Program;
+
+    #[test]
+    fn test_parse_index() {
+        let input = "(index 1 false)";
+        let res: BE = input.parse().unwrap();
+        assert_eq!(*res, Expr::Index(num(1), ebool(false)));
+    }
+
+    #[test]
+    fn test_parse_tuple() {
+        let input = "(tuple 1 2 3)";
+        let res: BE = input.parse().unwrap();
+        assert_eq!(*res, Expr::Tuple(vec![*num(1), *num(2), *num(3)]))
+    }
+
+    #[test]
+    fn test_parse_nil() {
+        let input = "(if true 1 nil)";
+        let res: BE = input.parse().unwrap();
+        assert_eq!(res, eif(ebool(true), num(1), Box::new(Expr::Nil)));
+    }
 
     #[test]
     fn test_parse_simple_valid() {
