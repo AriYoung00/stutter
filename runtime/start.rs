@@ -13,10 +13,11 @@ extern "C" {
 pub extern "C" fn snek_error(errcode: i64) {
     // TODO: print error message according to writeup
     eprintln!("{}", match errcode {
-        7 => "invalid argument - expected number, not bool",
-        8 => "invalid argument - expected bool, not number",
+        7 => "invalid argument - expected number",
+        8 => "invalid argument - expected bool",
         9 => "error - arithmetic overflow",
         10 => "invalid argument(s) - mismatched operand types",
+        11 => "invalue argument - expected tuple",
         _ => "an unknown error occurred",
     });
     std::process::exit(1);

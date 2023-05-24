@@ -4,6 +4,7 @@ use std::path::Path;
 use crate::ast::*;
 use crate::util::*;
 
+use inkwell::AddressSpace;
 use inkwell::IntPredicate;
 use inkwell::OptimizationLevel;
 use inkwell::basic_block::BasicBlock;
@@ -14,6 +15,7 @@ use inkwell::targets::FileType;
 use inkwell::targets::RelocMode;
 use inkwell::types::BasicTypeEnum;
 use inkwell::values::BasicMetadataValueEnum;
+use inkwell::values::GlobalValue;
 use inkwell::{
     builder::Builder,
     context::Context as IContext,
@@ -80,12 +82,15 @@ struct Compiler<'a, 'ctx> {
 
     exit_err_fn: FunctionValue<'ctx>,
     print_fn:    FunctionValue<'ctx>,
+    heap_top:    PointerValue<'ctx>,
 }
 
 #[allow(dead_code)]
 enum Primitive {
     Bool,
     Int,
+    Tuple,
+    Nil,
 }
 
 impl ToString for Primitive {
@@ -93,6 +98,8 @@ impl ToString for Primitive {
         match self {
             Primitive::Bool => format!("bool"),
             Primitive::Int  => format!("int"),
+            Primitive::Tuple => format!("tuple"),
+            Primitive::Nil  => format!("nil"),
         }
     }
 }
@@ -120,8 +127,11 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             one_arg_void_fn_type, Some(Linkage::External));
         let print_fn = module.add_function(&make_fn_name("snek_print"),
             one_arg_void_fn_type, Some(Linkage::External));
+        let heap_top = module.add_global(ink_ctx.i64_type(), Some(AddressSpace::default()), "heap_top");
+        heap_top.set_initializer(&ink_ctx.i64_type().const_zero());
+        let heap_top = heap_top.as_pointer_value();
 
-        Self { ink_ctx, builder, module, exit_err_fn, print_fn }
+        Self { ink_ctx, builder, module, exit_err_fn, print_fn, heap_top }
     }
     
     fn build_int_compare_const_conditional<'b>(
@@ -344,12 +354,27 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         let int_masked = self.builder
             .build_and(operand, one, "type_check_int_and");
 
-        // `cond` will be 1 if this is the type we think it is
+        // `cond` will be 0 if this is the type we think it is
+        // i.e. if cond is 1, throw an error
         let cond = match the_type {
+            // bool is tag=11
             Primitive::Bool => self.builder
                 .build_int_compare(IntPredicate::NE, bool_masked, three, "type_check_cond"),
+            // int is tag=x0
             Primitive::Int  => self.builder
                 .build_int_compare(IntPredicate::NE, int_masked, zero, "type_check_cond"),
+            // tuple is  tag=01, rest!=0
+            Primitive::Tuple => {
+                let is_not_one = self.builder
+                    .build_int_compare(IntPredicate::NE, bool_masked, one, "type_check_cond");
+                let is_only_one = self.builder
+                    .build_int_compare(IntPredicate::EQ, operand, one, "type_check_cond");
+                self.builder
+                    .build_or(is_not_one, is_only_one, "type_check_cond")
+            },
+            // nil is tag=01, rest=0
+            Primitive::Nil  => self.builder
+                .build_int_compare(IntPredicate::NE, operand, one, "type_check_cond"),
         };
 
         // in the else block, we will branch to the respective error function
@@ -360,6 +385,10 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             // 7 for "invalid argument - expected number, not bool",
             Primitive::Int  => self.ink_ctx.i64_type()
                 .const_int(7, false),
+            Primitive::Tuple => self.ink_ctx.i64_type()
+                .const_int(11, false),
+            Primitive::Nil => self.ink_ctx.i64_type()
+                .const_int(12, false),
         };
         self.build_conditional_call(cond, self.exit_err_fn, &[EIntValue(error_arg)], "snek_error", "type_check", ctx);
     }
@@ -641,6 +670,10 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     return Err(format!("Function {name} is undefined"));
                 };
                 
+                // TODO: we are just throwing away the has_terminator value from compilation
+                // the correct behavior would have a BasicBlock for each statement where the basic
+                // blocks unconditionally branch to the next if the sub-expr doesn't contain a
+                // terminator
                 let args: Vec<_> = args.into_iter()
                     .map(|x| self.compile_expr(x, ctx)
                         .map(|y| EIntValue(y.val)))
@@ -664,9 +697,92 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     .into_int_value()
                     .into())
             },
-            Expr::Tuple(_) => todo!(),
-            Expr::Index(_, _) => todo!(),
-            Expr::Nil => todo!(),
+
+            Expr::Tuple(vals) => {
+                let vals: Vec<_> = vals.into_iter()
+                    .map(|x| self.compile_expr(x, ctx)
+                        //.map(|y| EIntValue(y.val)))
+                        .map(|y| y.val))
+                    .collect::<EmitResult<_>>()?;
+
+                let old_heap_top_load = self.builder
+                    .build_load(self.ink_ctx.i64_type(), self.heap_top, "tup_address_tmp");
+                let old_heap_top_int = old_heap_top_load
+                    .into_int_value();
+                let old_heap_top_ptr = self.builder
+                        .build_int_to_ptr(old_heap_top_int, self.ink_ctx.i64_type().ptr_type(AddressSpace::default()), "tup_address_ptr");
+
+
+                // now allocate heap space
+                // keep in mind that heap pointer's type is i64 so +1 will allocate 8 bytes
+                // allocate for each value, plus one for length
+                let incr_amt = self.ink_ctx.i64_type()
+                    .const_int(8 * (vals.len() + 1) as u64, false);
+                let new_heap_top = self.builder
+                    .build_int_add(old_heap_top_int, incr_amt, "new_stack_top");
+                self.builder.build_store(self.heap_top, new_heap_top);
+
+                // store length
+                self.builder
+                    .build_store(old_heap_top_ptr, self.ink_ctx.i64_type()
+                        .const_int(vals.len() as u64, false));
+                // store elements
+                for (idx, val) in vals.into_iter().enumerate() {
+                    // make space for the length tag by adding 1
+                    let idx = idx as u64 + 1;
+                    let val_ptr_int = self.builder
+                        .build_int_add(old_heap_top_int, self.ink_ctx.i64_type().const_int(8 * idx, false), "tup_assign_ptr_int");
+                    let val_ptr = self.builder
+                        .build_int_to_ptr(val_ptr_int, self.ink_ctx.i64_type().ptr_type(AddressSpace::default()), "tup_val_ptr");
+
+                    self.builder
+                        .build_store(val_ptr, val);
+                }
+              
+                // construct tagged tuple ref
+                let tag = self.ink_ctx.i64_type().const_int(0b01, false);
+                Ok(self.builder
+                    .build_or(old_heap_top_int, tag, "tuple_ref")
+                    .into())
+            },
+
+            Expr::Index(idx_expr, tuple_expr) => {
+                let EmitVal { val: idx_val, has_terminator: idx_has_term } = self.compile_expr(idx_expr, ctx)?;
+                self.add_type_check(idx_val, Primitive::Int, ctx);
+                let EmitVal { val: tup_val, has_terminator: tup_has_term } = self.compile_expr(tuple_expr, ctx)?;
+                self.add_type_check(tup_val, Primitive::Tuple, ctx);
+                
+                let one = self.ink_ctx.i64_type()
+                    .const_int(1, false);
+                let eight = self.ink_ctx.i64_type()
+                    .const_int(8, false);
+                let tup_tag = self.ink_ctx.i64_type()
+                    .const_int(1, false);
+                // remove tag bit
+                let tup_ptr_int = self.builder
+                    .build_xor(tup_val, tup_tag, "tup_ptr_de_tag");
+                // remove index tag
+                let tup_idx_int = self.builder
+                    .build_right_shift(idx_val, one, false, "tup_idx_de_tag");
+                // multiply index by elem size
+                let tup_idx_offset = self.builder
+                    .build_int_mul(tup_idx_int, eight, "tup_idx_compute_offset");
+                // add offset to base pointer
+                let elem_ptr_int = self.builder
+                    .build_int_add(tup_ptr_int, tup_idx_offset, "tup_elem_ptr_int");
+                // convert to pointer
+                let elem_ptr = self.builder
+                    .build_int_to_ptr(elem_ptr_int, self.ink_ctx.i64_type().ptr_type(AddressSpace::default()), "tup_elem_ptr");
+                // load value
+                let elem_val = self.builder
+                    .build_load(self.ink_ctx.i64_type(), elem_ptr, "elem_val")
+                    .into_int_value();
+                
+                Ok(EmitVal { val: elem_val, has_terminator: idx_has_term || tup_has_term })
+            },
+
+            Expr::Nil => Ok(self.ink_ctx.i64_type()
+                .const_int(1, false).into()),
         }
     }
 
@@ -696,7 +812,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         thing
     }
 
-    pub fn compile_fn(&mut self, fun: FnDef) -> EmitResult<FunctionValue<'ctx>> {
+    fn _compile_fn(&mut self, fun: FnDef, is_main: bool) -> EmitResult<FunctionValue<'ctx>> {
         let fn_val = self.module.get_function(&make_fn_name(&fun.name))
             .expect("Attempted to compile fn without prototype -- this should never happen");
 
@@ -723,17 +839,35 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             loop_ctx: None,
             arg:      None,
         };
+
+        // TODO: fix hack
+        if is_main {
+            let heap_top_arg_ptr = fn_ctx.vars.get("heap_top")
+                .expect("Unable to find 'heap_top' as argument to main. This should never happen.");
+            let heap_top_arg_val = self.builder.build_load(self.ink_ctx.i64_type(), *heap_top_arg_ptr, "heap_top_val");
+            self.builder.build_store(self.heap_top, heap_top_arg_val);
+        }
+
         let body_val = self.compile_expr(fun.body.as_ref(), &fn_ctx)?;
 
         // we can assume that a break hasn't terminated the current block
         // since we are necesarily not inside a loop
         self.builder.build_return(Some(&body_val.val));
-        fn_val.print_to_stderr();
+        self.module.print_to_stderr();
 
         match fn_val.verify(true) {
             true  => Ok(fn_val),
             false => Err("Failed to verify function".into()),
         }
+    }
+
+    pub fn compile_fn(&mut self, fun: FnDef) -> EmitResult<FunctionValue<'ctx>> {
+        self._compile_fn(fun, false)
+    }
+
+    pub fn compile_main(&mut self, main: FnDef) -> EmitResult<FunctionValue<'ctx>> {
+        let _main_proto = self.compile_proto(&main, Some(Linkage::DLLExport));
+        self._compile_fn(main, true)
     }
 }
 
@@ -793,20 +927,19 @@ pub fn compile_program(prog: Program, output_path: &str, opt_level: Optimization
         compiler.compile_proto(function, Some(linkage));
     }
 
-    let _function_vals: Vec<FunctionValue> = functions.into_iter()
-        .map(|f| compiler.compile_fn(f))
-        .collect::<EmitResult<_>>()?;
-
     // TODO: fix cheap hack here
     let main_fn = FnDef{
         name: "our_code_starts_here".into(),
         // TODO: fix this cheap hack as well, input is just an argument to main
-        args: vec!["input".into()],
+        args: vec!["input".into(), "heap_top".into()],
         body: main,
     };
 
-    let _main_proto = compiler.compile_proto(&main_fn, Some(linkage));
-    let _main_fun = compiler.compile_fn(main_fn)?;
+    let _main_fun = compiler.compile_main(main_fn);
+
+    let _function_vals: Vec<FunctionValue> = functions.into_iter()
+        .map(|f| compiler.compile_fn(f))
+        .collect::<EmitResult<_>>()?;
 
     // Create FPM
     let fpm = PassManager::create(&module);
