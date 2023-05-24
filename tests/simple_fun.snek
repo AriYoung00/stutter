@@ -1,0 +1,4 @@
+(fun (doThing x)
+    (add1 x))
+
+(doThing 5)

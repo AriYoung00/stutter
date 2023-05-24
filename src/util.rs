@@ -1,3 +1,6 @@
+use clap::ValueEnum;
+use inkwell::targets::FileType;
+
 pub const EXIT_OPERAND_MISMATCH: &str = "exit_operand_mismatch";
 pub const EXIT_EXPECTED_NUM: &str = "exit_expected_number";
 pub const EXIT_EXPECTED_BOOL: &str = "exit_expected_bool";
@@ -7,6 +10,24 @@ pub const SNEK_PRINT: &str = "snek_print";
 
 pub type ParseResult<T> = Result<T, String>;
 pub type EmitResult<T>  = Result<T, String>;
+
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+pub enum EmitTarget {
+    /// Emit assembly
+    Assembly,
+    /// Emit an object file
+    Object,
+}
+
+impl From<EmitTarget> for FileType {
+    fn from(value: EmitTarget) -> Self {
+        match value {
+            EmitTarget::Assembly => FileType::Assembly,
+            EmitTarget::Object   => FileType::Object,
+        }
+    }
+}
 
 
 #[cfg(test)]

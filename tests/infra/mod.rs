@@ -105,10 +105,13 @@ fn run_static_error_test(name: &str, file: &Path, expected: &str) {
 
 fn compile(name: &str, file: &Path) -> Result<(), String> {
     // Run the compiler
+	// cargo run -- $< tests/$*.o --emit=object --backend=llvm
     let compiler: PathBuf = ["target", "debug", env!("CARGO_PKG_NAME")].iter().collect();
     let output = Command::new(&compiler)
         .arg(file)
-        .arg(&mk_path(name, Ext::Asm))
+        .arg(&mk_path(name, Ext::Obj))
+        .arg("--backend=llvm")
+        .arg("--emit=object")
         .output()
         .expect("could not run the compiler");
     if !output.status.success() {
@@ -120,8 +123,11 @@ fn compile(name: &str, file: &Path) -> Result<(), String> {
         .arg(&mk_path(name, Ext::Run))
         .output()
         .expect("could not run make");
-    assert!(output.status.success(), "linking failed");
 
+
+    use std::str::from_utf8;
+    assert!(output.status.success(), "linking failed with stdout: {}\n\nstderr: {}",
+        from_utf8(&output.stdout).unwrap(), from_utf8(&output.stderr).unwrap());
     Ok(())
 }
 
@@ -169,6 +175,7 @@ fn mk_path(name: &str, ext: Ext) -> PathBuf {
 enum Ext {
     Asm,
     Run,
+    Obj,
 }
 
 impl std::fmt::Display for Ext {
@@ -176,6 +183,7 @@ impl std::fmt::Display for Ext {
         match self {
             Ext::Asm => write!(f, "s"),
             Ext::Run => write!(f, "run"),
+            Ext::Obj => write!(f, "o"),
         }
     }
 }

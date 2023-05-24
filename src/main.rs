@@ -17,7 +17,9 @@ use util::*;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 enum Backend {
+    /// Use LLVM for optimizations and codegen
     LLVM,
+    /// Use zero-optimization x86 assembly backend
     X86,
 }
 
@@ -47,15 +49,22 @@ impl Into<OptimizationLevel> for OptLevel {
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
+    /// The name of the .snek file to compile.
     pub input_file_name:  String,
+    /// The name of the file to output to.
     pub output_file_name: String,
 
+    /// Which backend should be used to generate code.
     #[arg(long, short, value_enum, default_value_t=Backend::X86)]
-    /// Which backend should be used to generate code. Defaults to X86 zero-optimization backend
     pub backend: Backend,
-    #[arg(long, short, value_enum, default_value_t=OptLevel::Default)]
+
     /// How much optimization should occur. Has no effect unless using the LLVM backend.
+    #[arg(long, short, value_enum, default_value_t=OptLevel::Default)]
     pub optlevel: OptLevel,
+
+    /// What type of file we should emit. Has no effect unless using the LLVM backend.
+    #[arg(long, short, value_enum, default_value_t=EmitTarget::Object)]
+    pub emit: EmitTarget,
 }
 
 
@@ -73,7 +82,7 @@ fn main() -> std::io::Result<()> {
 
     match args.backend {
         Backend::X86  => emit_x86(prog, out_name),
-        Backend::LLVM => emit_llvm(prog, out_name, args.optlevel.into()),
+        Backend::LLVM => emit_llvm(prog, out_name, args.optlevel.into(), args.emit),
     }
 }
 
@@ -129,8 +138,8 @@ aligned:
 
 #[allow(dead_code)]
 #[allow(unused_variables)]
-fn emit_llvm(prog: Program, out_file_name: &str, opt_level: OptimizationLevel) -> std::io::Result<()> {
-    let compiled = llvm::compile_program(prog, out_file_name, opt_level).unwrap();
+fn emit_llvm(prog: Program, out_file_name: &str, opt_level: OptimizationLevel, target: EmitTarget) -> std::io::Result<()> {
+    let compiled = llvm::compile_program(prog, out_file_name, opt_level, target.into()).expect("[[invalid Invalid]]");
     Ok(())
 }
 

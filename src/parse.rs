@@ -281,7 +281,14 @@ fn parse_fun(stmts: &[Sexp]) -> ParseResult<FnDef> {
 /// parsing method (in the case of [`Sexp::List`])
 fn parse_expr(sexp: &Sexp) -> ParseResult<Box<Expr>> {
     match sexp {
-        Sexp::Atom(I(n)) => Ok(Expr::from_num(*n)),
+        Sexp::Atom(I(n)) => {
+            let n = *n;
+            if n < -4611686018427387904 || n > 4611686018427387903 {
+                return Err(format!("Invalid numeric literal: {n} is out of bounds"))
+            }
+
+            Ok(Expr::from_num(n))
+        },
         Sexp::Atom(S(s)) => parse_string(s),
 
         Sexp::List(v) => match &v[..] {
