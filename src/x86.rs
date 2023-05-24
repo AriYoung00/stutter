@@ -484,6 +484,9 @@ fn compile_expr(expr: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
         Break(body) => compile_break(body, ctx),
         Block(body) => compile_block(body, ctx),
         Input => compile_input(ctx),
+        Tuple(_) => todo!(),
+        Index(_, _) => todo!(),
+        Nil => todo!(),
     }
 }
 

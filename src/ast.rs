@@ -76,20 +76,31 @@ impl fmt::Display for BOper {
 #[derive(Debug, PartialEq, Eq, Clone)]
 /// This enum represents the types and shapes of valid expressions
 pub enum Expr {
+    // values
     Number(i64),
     Boolean(bool),
+    Tuple(Vec<Expr>),
+
+    // variables
     Id(String),
     Let(Vec<(String, Expr)>, Box<Expr>),
+    Set(String, Box<Expr>),
+
+    // operators
     UnOp(UOper, Box<Expr>),
     BinOp(BOper, Box<Expr>, Box<Expr>),
+    Index(Box<Expr>, Box<Expr>),
+
+    // control flow
     If(Box<Expr>, Box<Expr>, Box<Expr>),
     Loop(Box<Expr>),
     Break(Box<Expr>),
-    Set(String, Box<Expr>),
     Block(Vec<Expr>),
 
+    // other
     Call(String, Vec<Expr>),
     Input,
+    Nil,
 }
 
 /// This struct represents the type and shape of a valid function definition
@@ -139,6 +150,10 @@ impl fmt::Display for Expr {
             }
             Expr::Input => write!(f, "Input"),
             Expr::Call(name, args) => write!(f, "Call({name}, {args:?})"),
+
+            Expr::Tuple(_) => todo!(),
+            Expr::Index(_, _) => todo!(),
+            Expr::Nil => todo!(),
         }
     }
 }

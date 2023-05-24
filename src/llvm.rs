@@ -14,10 +14,7 @@ use inkwell::targets::FileType;
 use inkwell::targets::RelocMode;
 use inkwell::types::BasicTypeEnum;
 use inkwell::values::BasicMetadataValueEnum;
-use inkwell::values::IntMathValue;
-#[allow(unused_imports)]
 use inkwell::{
-    FloatPredicate,
     builder::Builder,
     context::Context as IContext,
     module::Module,
@@ -29,14 +26,12 @@ use inkwell::{
     },
     values::{
         IntValue,
-        StructValue,
-        FloatValue, FunctionValue, PointerValue,
+        FunctionValue, PointerValue,
         BasicMetadataValueEnum::IntValue as EIntValue, BasicValue
     },
 };
 
 #[derive(Clone)]
-#[allow(dead_code)]
 struct LoopCtx<'a, 'ctx> {
     pub exit: &'a BasicBlock<'ctx>,
     // use RefCell here for convenience
@@ -45,7 +40,6 @@ struct LoopCtx<'a, 'ctx> {
 }
 
 #[derive(Clone)]
-#[allow(dead_code)]
 struct Ctx<'a, 'ctx> {
     pub vars: im::HashMap<String, PointerValue<'ctx>>,
 
@@ -88,6 +82,7 @@ struct Compiler<'a, 'ctx> {
     print_fn:    FunctionValue<'ctx>,
 }
 
+#[allow(dead_code)]
 enum Primitive {
     Bool,
     Int,
@@ -104,6 +99,14 @@ impl ToString for Primitive {
 
 fn make_fn_name(name: &str) -> String {
     format!("\x01{name}")
+}
+
+const fn make_snek_int(val: i64) -> u64 {
+    (val << 1) as u64
+}
+
+const fn make_snek_bool(val: bool) -> u64 {
+    ((val as u64) << 2) | 0b011
 }
 
 impl<'a, 'ctx> Compiler<'a, 'ctx> {
@@ -149,7 +152,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         let neq_block = self.builder.get_insert_block().unwrap();
 
         self.builder.position_at_end(end_block);
-        let phi = self.builder.build_phi(self.ink_ctx.i64_type(), "{label_tag}_res");
+        let phi = self.builder.build_phi(self.ink_ctx.i64_type(), &format!("{label_tag}_res"));
         phi.add_incoming(&[(&true_val, eq_block), (&false_val, neq_block)]);
 
         phi.as_basic_value().into_int_value()
@@ -278,8 +281,10 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         // this is literally the numeric value "one"
         // not a snek tagged integer one
         let one_lit = self.ink_ctx.i64_type().const_int(1, false);
+        let two_lit = self.ink_ctx.i64_type().const_int(2, false);
+        let three_lit = self.ink_ctx.i64_type().const_int(3, false);
         // this is the tagged Snek value one
-        let one_snek = self.ink_ctx.i64_type().const_int(2, false);
+        let one_snek = self.ink_ctx.i64_type().const_int(make_snek_int(1), false);
 
         Ok(match op {
             UOper::Add1 => {
@@ -299,19 +304,25 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 let inverted = self.builder
                     .build_xor(masked, one_lit, "isnum_xor_tmp");
                 let shifted = self.builder
-                    .build_left_shift(inverted, one_lit, "isnum_shift_tmp");
+                    .build_left_shift(inverted, two_lit, "isnum_shift_tmp");
                 self.builder
-                    .build_int_add(shifted, one_lit, "typecheck_result")
+                    .build_int_add(shifted, three_lit, "typecheck_result")
             },
             UOper::IsBool => {
-                // efficient strategy: mask out all but the lower bit and shift
-                // left
+                // for some val
+                // masked = val & 0b11
+                // res = (((masked >> 1) & (masked)) << 2) + 3
                 let masked = self.builder
-                    .build_and(operand, one_lit, "isbool_and_tmp");
-                let shifted = self.builder
-                    .build_left_shift(masked, one_lit, "isbool_shift_tmp");
+                    .build_and(operand, three_lit, "isbool_and_tmp");
+                let shifted_one = self.builder
+                    .build_right_shift(masked, one_lit, false, "isbool_lshift_tmp");
+                let anded = self.builder
+                    .build_and(masked, shifted_one, "isbool_and_tmp");
+                let de_shifted = self.builder
+                    .build_left_shift(anded, two_lit, "isbool_rshift_tmp");
+
                 self.builder
-                    .build_int_add(shifted, one_lit, "isbool_add")
+                    .build_int_add(de_shifted, three_lit, "isbool_add")
             },
             UOper::Print => {
                 self.builder
@@ -322,16 +333,23 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
     }
 
     fn add_type_check<'b>(&mut self, operand: IntValue<'ctx>, the_type: Primitive, ctx: &Ctx<'b, 'ctx>) {
+        // to check if int, check if lowest bit is equal to zero
+        // to check if bool, check if lowest two bits are equal to 3
+        let three = self.ink_ctx.i64_type().const_int(0b11, false);
         let one = self.ink_ctx.i64_type().const_int(1, false);
-        let masked = self.builder
-            .build_and(operand, one, "type_check_and");
+        let zero = self.ink_ctx.i64_type().const_zero();
+
+        let bool_masked = self.builder
+            .build_and(operand, three, "type_check_bool_and");
+        let int_masked = self.builder
+            .build_and(operand, one, "type_check_int_and");
 
         // `cond` will be 1 if this is the type we think it is
         let cond = match the_type {
             Primitive::Bool => self.builder
-                .build_int_compare(IntPredicate::NE, masked, one, "type_check_cond"),
+                .build_int_compare(IntPredicate::NE, bool_masked, three, "type_check_cond"),
             Primitive::Int  => self.builder
-                .build_int_compare(IntPredicate::EQ, masked, one, "type_check_cond"),
+                .build_int_compare(IntPredicate::NE, int_masked, zero, "type_check_cond"),
         };
 
         // in the else block, we will branch to the respective error function
@@ -346,16 +364,41 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         self.build_conditional_call(cond, self.exit_err_fn, &[EIntValue(error_arg)], "snek_error", "type_check", ctx);
     }
 
+    #[allow(dead_code)]
     fn add_same_type_check<'b>(&mut self, lhs: IntValue<'ctx>, rhs: IntValue<'ctx>, ctx: &Ctx<'b, 'ctx>) {
+        // is_same_type = (lowest bits both zero) | (lowest 2 bits equal)
+        let zero = self.ink_ctx.i64_type()
+            .const_zero();
         let one = self.ink_ctx.i64_type()
             .const_int(1, false);
+        let three = self.ink_ctx.i64_type()
+            .const_int(3, false);
 
-        let masked = self.builder
-            .build_xor(lhs, rhs, "same_type_check_xor");
-        let masked = self.builder
-            .build_and(masked, one, "same_type_check_and");
+        let lhs_masked_one = self.builder
+            .build_and(lhs, one, "same_type_check_lhs_masked");
+        let rhs_masked_one = self.builder
+            .build_and(rhs, one, "same_type_check_rhs_masked");
+
+        let lhs_masked_three = self.builder
+            .build_and(lhs, three, "same_type_check_lhs_masked");
+        let rhs_masked_three = self.builder
+            .build_and(rhs, three, "same_type_check_rhs_masked");
+
+        let lhs_zero = self.builder
+            .build_int_compare(IntPredicate::EQ, lhs_masked_one, zero, "same_type_check_lhs_lowest_zero");
+        let rhs_zero = self.builder
+            .build_int_compare(IntPredicate::EQ, rhs_masked_one, zero, "same_type_check_rhs_lowest_zero");
+        let both_zero = self.builder
+            .build_and(lhs_zero, rhs_zero, "same_type_check_lowest_both_zero");
+
+        let lowest_two_eq = self.builder
+            .build_int_compare(IntPredicate::EQ, lhs_masked_three, rhs_masked_three, "same_type_check_lowest_two_same");
+
         let cond = self.builder
-            .build_int_compare(IntPredicate::NE, masked, one, "same_type_check_cond");
+            .build_or(both_zero, lowest_two_eq, "same_type_check_cond");
+        // check hack to invert cond, since we want to fail if they're NOT the same type
+        let cond = self.builder
+            .build_not(cond, "same_type_check_cond_hack");
 
         let error_arg = self.ink_ctx.i64_type()
             .const_int(10, false);
@@ -363,11 +406,17 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
     }
 
     fn compile_binary_op<'b>(&mut self, op: &BOper, lhs: IntValue<'ctx>, rhs: IntValue<'ctx>, ctx: &Ctx<'b, 'ctx>) -> EmitResult<IntValue<'ctx>> {
-        const TRUE:  i64 = 3;
-        const FALSE: i64 = 1;
+        const TRUE:  i64 = make_snek_bool(true) as i64;
+        const FALSE: i64 = make_snek_bool(false) as i64;
 
-        self.add_type_check(lhs, Primitive::Int, ctx);
-        self.add_type_check(rhs, Primitive::Int, ctx);
+        if let BOper::Equal = op {
+            self.add_same_type_check(lhs, rhs, ctx)
+            // for now do nothing here
+        }
+        else {
+            self.add_type_check(lhs, Primitive::Int, ctx);
+            self.add_type_check(rhs, Primitive::Int, ctx);
+        }
 
         Ok(match op {
             BOper::Plus => self.build_checked_add(lhs, rhs, ctx),
@@ -417,19 +466,14 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 // should we use i64 and shifts to represent a Number
                 // or should we have an llvm "value" struct which separates the tag and value as
                 // fields
-                let val = n << 1;
                 Ok(self.ink_ctx.i64_type()
-                    .const_int(val as u64, true)
+                    .const_int(make_snek_int(*n), true)
                     .into())
             },
 
             Expr::Boolean(b) => {
-                let val = match b {
-                    true  => 3,
-                    false => 1,
-                };
                 Ok(self.ink_ctx.i64_type()
-                    .const_int(val, false)
+                    .const_int(make_snek_bool(*b), false)
                     .into())
             },
             Expr::Id(name) => {
@@ -496,7 +540,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             },
 
             Expr::If(cond_expr, then_expr, else_expr) => {
-                let false_ = self.ink_ctx.i64_type().const_int(1, false);
+                let false_ = self.ink_ctx.i64_type().const_int(make_snek_bool(false), false);
                 let cond_res  = self.compile_expr(cond_expr, ctx)?;
                 if  cond_res.has_terminator {
                     panic!("TODO: handle terminator inside if condition")
@@ -620,6 +664,9 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     .into_int_value()
                     .into())
             },
+            Expr::Tuple(_) => todo!(),
+            Expr::Index(_, _) => todo!(),
+            Expr::Nil => todo!(),
         }
     }
 
@@ -759,7 +806,7 @@ pub fn compile_program(prog: Program, output_path: &str, opt_level: Optimization
     };
 
     let _main_proto = compiler.compile_proto(&main_fn, Some(linkage));
-    let fun = compiler.compile_fn(main_fn)?;
+    let _main_fun = compiler.compile_fn(main_fn)?;
 
     // Create FPM
     let fpm = PassManager::create(&module);
@@ -787,4 +834,23 @@ pub fn compile_program(prog: Program, output_path: &str, opt_level: Optimization
     target_machine
         .write_to_file(&module, file_type, path)
         .map_err(|err| format!("Failed to write to assembly file {output_path}: {}", err))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::llvm::{make_snek_int, make_snek_bool};
+
+    #[test]
+    fn test_make_snek_int() {
+        assert_eq!(make_snek_int(1), 2);
+        assert_eq!(make_snek_int(-5), -10_i64 as u64);
+        assert_eq!(make_snek_int(35), 70);
+    }
+
+    #[test]
+    fn test_make_snek_bool() {
+        assert_eq!(make_snek_bool(true), 0b111);
+        assert_eq!(make_snek_bool(false), 0b011);
+
+    }
 }
