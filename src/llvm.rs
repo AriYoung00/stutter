@@ -660,9 +660,10 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 
             Expr::Block(stmts) => stmts.into_iter()
                     .map(|x| self.compile_expr(x, ctx))
-                    .take_while(|r| r.is_ok())
+                    .collect::<EmitResult<Vec<_>>>()?
+                    .into_iter()
                     .last()
-                    .ok_or("Error: found block with no statements".to_owned())?,
+                    .ok_or(format!("Error: Found empty block")),
 
             Expr::Call(name, args) => {
                 let mangled_name = make_fn_name(name);
@@ -859,18 +860,21 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 
         // TODO: fix hack
         if is_main {
+            println!("we're in main, building heap top");
             let heap_top_arg_ptr = fn_ctx.vars.get("heap_top")
                 .expect("Unable to find 'heap_top' as argument to main. This should never happen.");
             let heap_top_arg_val = self.builder.build_load(self.ink_ctx.i64_type(), *heap_top_arg_ptr, "heap_top_val");
             self.builder.build_store(self.heap_top, heap_top_arg_val);
         }
 
+        // let body_val = self.compile_expr(fun.body.as_ref(), &fn_ctx)?;
         let body_val = self.compile_expr(fun.body.as_ref(), &fn_ctx)?;
+        println!("compiled body of fn {}", fun.name);
 
         // we can assume that a break hasn't terminated the current block
         // since we are necesarily not inside a loop
         self.builder.build_return(Some(&body_val.val));
-        self.module.print_to_stderr();
+        println!("build return");
 
         match fn_val.verify(true) {
             true  => Ok(fn_val),
@@ -889,15 +893,8 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 }
 
 pub fn compile_program(prog: Program, output_path: &str, opt_level: OptimizationLevel, file_type: FileType) -> EmitResult<()> {
-    if cfg!(target_arch = "aarch64") {
-        Target::initialize_aarch64(&InitializationConfig::default());
-    }
-    else if cfg!(target_arch = "x86") {
-        Target::initialize_x86(&InitializationConfig::default());
-    }
-    else {
-        panic!("Unsupported architecture");
-    }
+    Target::initialize_x86(&InitializationConfig::default());
+    Target::initialize_aarch64(&InitializationConfig::default());
 
     let reloc_mode = RelocMode::Default;
     let code_model = CodeModel::Default;
@@ -952,22 +949,25 @@ pub fn compile_program(prog: Program, output_path: &str, opt_level: Optimization
         body: main,
     };
 
-    let _main_fun = compiler.compile_main(main_fn);
+    let main = compiler.compile_main(main_fn)?;
 
-    let _function_vals: Vec<FunctionValue> = functions.into_iter()
+    let function_vals: Vec<FunctionValue> = functions.into_iter()
         .map(|f| compiler.compile_fn(f))
         .collect::<EmitResult<_>>()?;
+
+    println!("compilation finished");
+    module.print_to_stderr();
 
     // Create FPM
     let fpm = PassManager::create(&module);
 
     fpm.add_instruction_combining_pass();
     fpm.add_reassociate_pass();
-    // fpm.add_gvn_pass();
-    // fpm.add_cfg_simplification_pass();
-    // fpm.add_basic_alias_analysis_pass();
+    fpm.add_gvn_pass();
+    fpm.add_cfg_simplification_pass();
+    fpm.add_basic_alias_analysis_pass();
     fpm.add_promote_memory_to_register_pass();
-    // fpm.add_instruction_combining_pass();
+    fpm.add_instruction_combining_pass();
     fpm.add_reassociate_pass();
 
     fpm.initialize();
@@ -975,10 +975,10 @@ pub fn compile_program(prog: Program, output_path: &str, opt_level: Optimization
     module.set_data_layout(&target_machine.get_target_data().get_data_layout());
     module.set_triple(&TargetMachine::get_default_triple());
 
-    // for function in function_vals {
-    //     fpm.run_on(&function);
-    // }
-    // fpm.run_on(&main);
+    for function in function_vals {
+        fpm.run_on(&function);
+    }
+    fpm.run_on(&main);
 
     let path = Path::new(output_path);
     target_machine
