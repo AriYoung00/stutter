@@ -1,4 +1,5 @@
 use std::env;
+use std::collections::HashSet;
 
 #[link(name = "our_code")]
 extern "C" {
@@ -25,15 +26,95 @@ pub extern "C" fn snek_error(errcode: i64) {
 }
 
 #[export_name = "\x01snek_print"]
-pub extern "C" fn snek_print(val: i64) {
+pub extern "C" fn snek_print(val: u64) {
+    let mut seen = HashSet::new();
+    println!("{}", unsafe { snek_val_to_str(val, &mut seen) });
+}
+
+#[export_name = "\x01snek_struct_eq"]
+pub extern "C" fn snek_struct_eq(lhs: u64, rhs: u64) -> u64 {
+    let res = unsafe { snek_struct_eq_impl(lhs, rhs) };
+    if res {
+        0b111
+    }
+    else {
+        0b011
+    }
+}
+
+unsafe fn snek_struct_eq_impl(lhs: u64, rhs: u64, seen: &mut HashSet<(*const u64, *const u64)>) -> bool {
+    // check tags and lower bit if integer
+    if (lhs & 0b11 != rhs & 0b11) {
+        return false;
+    }
+    // if we're here, they must be the same type
+
+    // integers
+    if (lhs & 0b1 == 0) {
+        return lhs == rhs;
+    }
+    // booleans
+    if (lhs & 0b11 == 0b11) {
+        return lhs == rhs;
+    }
+
+    // vectors
+    if (lhs & 0b1 == 0b1) {
+        let lhs_ptr = (lhs - 1) as *const u64;
+        let rhs_ptr = (rhs - 1) as *const u64;
+
+        // if we've attempted to check equality on these two vectors before
+        // assume they are self-referential in some complementary way and return true
+        if seen.contains((&lhs_ptr, &rhs_ptr)) || seen.contains((&rhs_ptr, &lhs_ptr)) {
+            return true;
+        }
+        seen.insert((lhs_ptr, rhs_ptr));
+        
+        let lhs_len = *lhs_ptr;
+        let rhs_len = *rhs_ptr;
+
+        if (lhs_len != rhs_len) {
+            return false;
+        }
+
+        for i in 0_isize..(lhs_len as isize) {
+            let lhs_val = *lhs_ptr.offset(i+1);
+            let rhs_val = *rhs_ptr.offset(i+1);
+
+            if (snek_struct_eq_impl(lhs_val, rhs_val, seen) == false) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // otherwise wtf is happening
+    panic!("unrecognized type passed to struct_eq");
+}
+
+unsafe fn snek_val_to_str(val: u64, seen: &mut HashSet<*const u64>) -> String {
     match val {
-        0b011 => println!("false"),
-        0b111 => println!("true"),
+        0b011 => "false".into(),
+        0b111 => "true".into(),
         _ if (val & 0b01) == 1 => {
-            println!("print tuple is not yet implemented")
+            let vec_start = (val - 1) as *const u64;
+
+            if seen.contains(&vec_start) {
+                return "[...]".into()
+            }
+            seen.insert(vec_start);
+
+            let len: isize = (*vec_start) as isize;
+            let mut subs: Vec<String> = Vec::new();
+            for i in 0_isize..len {
+                subs.push(snek_val_to_str(*vec_start.offset(i+1), seen));
+            }
+            seen.remove(&vec_start);
+
+            format!("[{}]", subs.join(", "))
         },
-        _ => println!("{}", val >> 1),
-    };
+        _ => format!("{}", (val as i64) >> 1),
+    }
 }
 
 fn parse_input(input: &str) -> i64 {
@@ -65,18 +146,8 @@ fn main() {
     let mut memory = Vec::with_capacity(100_000);
     let buf: *mut u64 = memory.as_mut_ptr();
 
-    let i: i64 = unsafe { our_code_starts_here(input, buf) };
-    if i == 0b111 {
-        println!("true");
-    }
-    else if i == 0b011 {
-        println!("false");
-    }
-    else if (i & 0b01) != 0 {
-        println!("tuple value");
-    }
-    else {
-        let n = i >> 1;
-        println!("{n}");
-    }
+    let i: u64 = unsafe { our_code_starts_here(input, buf) } as u64;
+    let mut seen = HashSet::new();
+    let str_res = unsafe{ snek_val_to_str(i, &mut seen) };
+    println!("{}", str_res);
 }

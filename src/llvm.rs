@@ -15,7 +15,6 @@ use inkwell::targets::FileType;
 use inkwell::targets::RelocMode;
 use inkwell::types::BasicTypeEnum;
 use inkwell::values::BasicMetadataValueEnum;
-use inkwell::values::GlobalValue;
 use inkwell::{
     builder::Builder,
     context::Context as IContext,
@@ -434,6 +433,58 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         self.build_conditional_call(cond, self.exit_err_fn, &[EIntValue(error_arg)], "snek_error", "same_type_check", ctx);
     }
 
+    fn vec_get_elem_ptr<'b>(&mut self, idx_val: IntValue<'ctx>, vec_val: IntValue<'ctx>, ctx: &Ctx<'b, 'ctx>) -> PointerValue<'ctx> {
+        let i64_ptr = self.ink_ctx.i64_type()
+            .ptr_type(AddressSpace::default());
+
+        let zero = self.ink_ctx.i64_type().const_zero();
+        let one = self.ink_ctx.i64_type()
+            .const_int(1, false);
+        let eight = self.ink_ctx.i64_type()
+            .const_int(8, false);
+        let tup_tag = self.ink_ctx.i64_type()
+            .const_int(1, false);
+        // remove tag bit
+        let tup_ptr_int = self.builder
+            .build_xor(vec_val, tup_tag, "tup_ptr_de_tag");
+        // remove index tag
+        let tup_idx_int = self.builder
+            .build_right_shift(idx_val, one, false, "tup_idx_de_tag");
+        // read tuple size
+        let tup_size_ptr = self.builder
+            .build_int_to_ptr(tup_ptr_int, i64_ptr, "tup_size_ptr");
+        let tup_size = self.builder
+            .build_load(self.ink_ctx.i64_type(), tup_size_ptr, "tup_size_val")
+            .into_int_value();
+
+        // error if tuple size is less than idx
+        let cond = self.builder
+            .build_int_compare(IntPredicate::UGT, tup_idx_int, tup_size, "tup_size_check_cond");
+        let call_args = [EIntValue(self.ink_ctx.i64_type().const_int(12, false))];
+        self.build_conditional_call(cond, self.exit_err_fn, &call_args, "snek_error", "tup_size_check_exit_err", ctx);
+
+        let cond = self.builder
+            .build_int_compare(IntPredicate::SLT, tup_idx_int, zero, "tup_bounds_check_cond");
+        let call_args = [EIntValue(self.ink_ctx.i64_type().const_int(12, false))];
+        self.build_conditional_call(cond, self.exit_err_fn, &call_args, "snek_error", "vec_bounds_check_exit_err", ctx);
+
+
+        // offset index to account for length tag
+        let tup_idx_int = self.builder
+            .build_int_add(tup_idx_int, one, "vec_idx_length_offset");
+        // multiply index by elem size
+        let tup_idx_offset = self.builder
+            .build_int_mul(tup_idx_int, eight, "tup_idx_compute_offset");
+        // add offset to base pointer
+        let elem_ptr_int = self.builder
+            .build_int_add(tup_ptr_int, tup_idx_offset, "tup_elem_ptr_int");
+        // convert to pointer
+        let elem_ptr = self.builder
+            .build_int_to_ptr(elem_ptr_int, i64_ptr, "tup_elem_ptr");
+
+        elem_ptr
+    }
+
     fn compile_binary_op<'b>(&mut self, op: &BOper, lhs: IntValue<'ctx>, rhs: IntValue<'ctx>, ctx: &Ctx<'b, 'ctx>) -> EmitResult<IntValue<'ctx>> {
         const TRUE:  i64 = make_snek_bool(true) as i64;
         const FALSE: i64 = make_snek_bool(false) as i64;
@@ -462,6 +513,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     .build_int_compare(IntPredicate::EQ, lhs, rhs, "eq_tmp");
                 self.build_int_compare_const_conditional(cond, TRUE, FALSE, "binop_eq", ctx)
             },
+            BOper::StructEqual => todo!("implement emit for StructEqual"),
             BOper::Greater => {
                 let cond = self.builder
                     .build_int_compare(IntPredicate::SGT, lhs, rhs, "binop_gt_tmp");
@@ -699,7 +751,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     .into())
             },
 
-            Expr::Tuple(vals) => {
+            Expr::Vec(vals) => {
                 let vals: Vec<_> = vals.into_iter()
                     .map(|x| self.compile_expr(x, ctx)
                         //.map(|y| EIntValue(y.val)))
@@ -747,49 +799,13 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     .into())
             },
 
-            Expr::Index(idx_expr, tuple_expr) => {
+            Expr::VecGet(idx_expr, tuple_expr) => {
                 let EmitVal { val: idx_val, has_terminator: idx_has_term } = self.compile_expr(idx_expr, ctx)?;
                 self.add_type_check(idx_val, Primitive::Int, ctx);
                 let EmitVal { val: tup_val, has_terminator: tup_has_term } = self.compile_expr(tuple_expr, ctx)?;
                 self.add_type_check(tup_val, Primitive::Tuple, ctx);
-                let i64_ptr = self.ink_ctx.i64_type()
-                    .ptr_type(AddressSpace::default());
 
-
-                let one = self.ink_ctx.i64_type()
-                    .const_int(1, false);
-                let eight = self.ink_ctx.i64_type()
-                    .const_int(8, false);
-                let tup_tag = self.ink_ctx.i64_type()
-                    .const_int(1, false);
-                // remove tag bit
-                let tup_ptr_int = self.builder
-                    .build_xor(tup_val, tup_tag, "tup_ptr_de_tag");
-                // remove index tag
-                let tup_idx_int = self.builder
-                    .build_right_shift(idx_val, one, false, "tup_idx_de_tag");
-                // read tuple size
-                let tup_size_ptr = self.builder
-                    .build_int_to_ptr(tup_ptr_int, i64_ptr, "tup_size_ptr");
-                let tup_size = self.builder
-                    .build_load(self.ink_ctx.i64_type(), tup_size_ptr, "tup_size_val")
-                    .into_int_value();
-
-                // error if tuple size is less than idx
-                let cond = self.builder
-                    .build_int_compare(IntPredicate::UGT, tup_idx_int, tup_size, "tup_size_check_cond");
-                let call_args = [EIntValue(self.ink_ctx.i64_type().const_int(12, false))];
-                self.build_conditional_call(cond, self.exit_err_fn, &call_args, "snek_error", "tup_size_check_exit_err", ctx);
-
-                // multiply index by elem size
-                let tup_idx_offset = self.builder
-                    .build_int_mul(tup_idx_int, eight, "tup_idx_compute_offset");
-                // add offset to base pointer
-                let elem_ptr_int = self.builder
-                    .build_int_add(tup_ptr_int, tup_idx_offset, "tup_elem_ptr_int");
-                // convert to pointer
-                let elem_ptr = self.builder
-                    .build_int_to_ptr(elem_ptr_int, i64_ptr, "tup_elem_ptr");
+                let elem_ptr = self.vec_get_elem_ptr(idx_val, tup_val, ctx);
                 // load value
                 let elem_val = self.builder
                     .build_load(self.ink_ctx.i64_type(), elem_ptr, "elem_val")
@@ -797,6 +813,21 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 
                 // Ok(EmitVal { val: elem_val, has_terminator: idx_has_term || tup_has_term })
                 Ok(EmitVal { val: elem_val, has_terminator: false })
+            },
+
+            Expr::VecSet(idx_expr, vec_expr, val_expr) => {
+                let EmitVal{ val: idx_val, .. }  = self.compile_expr(idx_expr, ctx)?;
+                self.add_type_check(idx_val, Primitive::Int, ctx);
+                let EmitVal{ val: vec_val, .. }  = self.compile_expr(vec_expr, ctx)?;
+                self.add_type_check(vec_val, Primitive::Tuple, ctx);
+                let EmitVal{ val: val_val, .. }  = self.compile_expr(val_expr, ctx)?;
+                // no type check for val
+
+                let elem_ptr = self.vec_get_elem_ptr(idx_val, vec_val, ctx);
+                self.builder
+                    .build_store(elem_ptr, val_val);
+                
+                Ok(EmitVal { val: val_val, has_terminator: false })
             },
 
             Expr::Nil => Ok(self.ink_ctx.i64_type()

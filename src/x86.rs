@@ -167,6 +167,7 @@ fn compile_binary(op: BOper, lhs: Box<Expr>, rhs: Box<Expr>, ctx: Ctx) -> EmitRe
                 Cmovne(RAX, FALSE),
             ]);
         },
+        BOper::StructEqual => todo!("compile StructEqual in x86, ignore this"),
         BOper::Greater => {
             append_check_num(Reg(RAX), &mut body);
             append_check_num(StackIndex(si), &mut body);
@@ -484,9 +485,10 @@ fn compile_expr(expr: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
         Break(body) => compile_break(body, ctx),
         Block(body) => compile_block(body, ctx),
         Input => compile_input(ctx),
-        Tuple(_) => todo!(),
-        Index(_, _) => todo!(),
+        Vec(_) => todo!(),
+        VecGet(_, _) => todo!(),
         Nil => todo!(),
+        VecSet(_, _, _) => todo!(),
     }
 }
 

@@ -35,6 +35,7 @@ impl FromStr for BOper {
             ">=" => Ok(Self::GreaterEqual),
             "<" => Ok(Self::Less),
             "<=" => Ok(Self::LessEqual),
+            "==" => Ok(Self::StructEqual),
             _ => Err(format!("Invalid binary operation '{}'", s)),
         }
     }
@@ -73,6 +74,10 @@ impl Expr {
     }
     pub fn from_block(stmts: Vec<Expr>) -> Box<Self> {
         Box::new(Self::Block(stmts))
+    }
+
+    pub fn from_vec_set(idx: Box<Expr>, vec: Box<Expr>, val: Box<Expr>) -> Box<Self> {
+        Box::new(Self::VecSet(idx, vec, val))
     }
 }
 
@@ -161,6 +166,11 @@ fn parse_list(op: &str, list: &[Sexp]) -> ParseResult<Box<Expr>> {
     match (op, list) {
         ("let", [Sexp::List(binds), rhs]) => parse_let(binds, rhs),
         ("set!", [Sexp::Atom(S(name)), rhs]) => Ok(Expr::from_set(name.clone(), parse_expr(rhs)?)),
+        ("vec-set!", [idx, vec, value]) => Ok(Expr::from_vec_set(
+            parse_expr(idx)?,
+            parse_expr(vec)?,
+            parse_expr(value)?
+        )),
         ("if", [cond, if_b, else_b]) => Ok(Expr::from_if(
             parse_expr(cond)?,
             parse_expr(if_b)?,
@@ -168,6 +178,7 @@ fn parse_list(op: &str, list: &[Sexp]) -> ParseResult<Box<Expr>> {
         )),
         ("loop", [rhs]) => Ok(Expr::from_loop(parse_expr(rhs)?)),
         ("break", [rhs]) => Ok(Expr::from_break(parse_expr(rhs)?)),
+        ("vec-len", [vec]) => todo!("Implement vec-len parse"),
         ("fun", _) => Err("Found 'fun' in an invalid context (not top-level)".into()),
 
         (op, [a])
@@ -175,9 +186,9 @@ fn parse_list(op: &str, list: &[Sexp]) -> ParseResult<Box<Expr>> {
         (op, [lhs, rhs])
             if BOper::is_boper(op) => parse_binary(&op, lhs, rhs),
 
-        ("index", [lhs, rhs]) => Ok(Box::new(Expr::Index(parse_expr(lhs)?, parse_expr(rhs)?))),
+        ("vec-get", [lhs, rhs]) => Ok(Box::new(Expr::VecGet(parse_expr(lhs)?, parse_expr(rhs)?))),
 
-        ("tuple", vals) => Ok(Box::new(Expr::Tuple(
+        ("vec", vals) => Ok(Box::new(Expr::Vec(
                     vals.into_iter()
                         .map(parse_expr)
                         .map(|r| r
@@ -228,10 +239,11 @@ fn contains_input(ast: &Box<Expr>) -> bool {
         Expr::Nil   => false,
 
         Expr::BinOp(_, ref sub1, ref sub2) 
-            | Expr::Index(ref sub1, ref sub2) =>
+            | Expr::VecGet(ref sub1, ref sub2) =>
                 contains_input(sub1) || contains_input(sub2),
-        Expr::If(ref sub1, ref sub2, ref sub3) => 
-            contains_input(sub1) || contains_input(sub2) || contains_input(sub3),
+        Expr::If(ref sub1, ref sub2, ref sub3)
+            | Expr::VecSet(ref sub1, ref sub2, ref sub3) => 
+                contains_input(sub1) || contains_input(sub2) || contains_input(sub3),
 
         Expr::UnOp(_, ref sub)
             | Expr::Loop(ref sub)
@@ -240,7 +252,7 @@ fn contains_input(ast: &Box<Expr>) -> bool {
 
         Expr::Block(ref conts)
             | Expr::Call(_, ref conts)
-            | Expr::Tuple(ref conts) => conts.iter()
+            | Expr::Vec(ref conts) => conts.iter()
                 .any(|sub| contains_input(&Box::new(sub.clone()))),
 
         Expr::Let(ref binds, ref body) => {
@@ -452,14 +464,14 @@ mod test {
     fn test_parse_index() {
         let input = "(index 1 false)";
         let res: BE = input.parse().unwrap();
-        assert_eq!(*res, Expr::Index(num(1), ebool(false)));
+        assert_eq!(*res, Expr::VecGet(num(1), ebool(false)));
     }
 
     #[test]
     fn test_parse_tuple() {
         let input = "(tuple 1 2 3)";
         let res: BE = input.parse().unwrap();
-        assert_eq!(*res, Expr::Tuple(vec![*num(1), *num(2), *num(3)]))
+        assert_eq!(*res, Expr::Vec(vec![*num(1), *num(2), *num(3)]))
     }
 
     #[test]
