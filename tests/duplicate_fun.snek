@@ -1,0 +1,6 @@
+(fun (dup a) (print a))
+(fun (dup a b) (block
+    (print a)
+    (print b)
+))
+(dup 1 2)

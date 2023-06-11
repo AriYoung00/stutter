@@ -1,0 +1,143 @@
+define i64 @"\01fact"(i64 %n) {
+fact_entry:
+  %acc = alloca i64, align 8
+  %i = alloca i64, align 8
+  %n1 = alloca i64, align 8
+  store i64 %n, ptr %n1, align 4
+  store i64 2, ptr %i, align 4
+  store i64 2, ptr %acc, align 4
+  br label %loop
+
+loop:                                             ; preds = %fact_entry
+  %i2 = load i64, ptr %i, align 4
+  %n3 = load i64, ptr %n1, align 4
+  %type_check_and = and i64 %i2, 1
+  %type_check_cond = icmp eq i64 %type_check_and, 1
+  br i1 %type_check_cond, label %type_check_succeed, label %type_check_fail
+
+loop_exit:                                        ; No predecessors!
+  %loop_res = phi i64 [ %acc9, %loop_exit ]
+  ret i64 %loop_res
+
+type_check_succeed:                               ; preds = %loop
+  call void @"\01snek_error"(i64 7)
+  br label %type_check_end
+
+type_check_fail:                                  ; preds = %loop
+  br label %type_check_end
+
+type_check_end:                                   ; preds = %type_check_fail, %type_check_succeed
+  %type_check_and4 = and i64 %n3, 1
+  %type_check_cond5 = icmp eq i64 %type_check_and4, 1
+  br i1 %type_check_cond5, label %type_check_succeed6, label %type_check_fail7
+
+type_check_succeed6:                              ; preds = %type_check_end
+  call void @"\01snek_error"(i64 7)
+  br label %type_check_end8
+
+type_check_fail7:                                 ; preds = %type_check_end
+  br label %type_check_end8
+
+type_check_end8:                                  ; preds = %type_check_fail7, %type_check_succeed6
+  %binop_gt_tmp = icmp sgt i64 %i2, %n3
+  br i1 %binop_gt_tmp, label %binop_gt_true_block, label %binop_gt_false_block
+
+binop_gt_true_block:                              ; preds = %type_check_end8
+  br label %binop_gt_end_block
+
+binop_gt_false_block:                             ; preds = %type_check_end8
+  br label %binop_gt_end_block
+
+binop_gt_end_block:                               ; preds = %binop_gt_false_block, %binop_gt_true_block
+  %"{label_tag}_res" = phi i64 [ 3, %binop_gt_true_block ], [ 1, %binop_gt_false_block ]
+  %if_cond = icmp eq i64 %"{label_tag}_res", 3
+  br i1 %if_cond, label %if_then, label %if_else
+
+if_then:                                          ; preds = %binop_gt_end_block
+  %acc9 = load i64, ptr %acc, align 4
+  br label %if_end
+
+if_else:                                          ; preds = %binop_gt_end_block
+  %acc10 = load i64, ptr %acc, align 4
+  %i11 = load i64, ptr %i, align 4
+  %type_check_and12 = and i64 %acc10, 1
+  %type_check_cond13 = icmp eq i64 %type_check_and12, 1
+  br i1 %type_check_cond13, label %type_check_succeed14, label %type_check_fail15
+
+if_end:                                           ; preds = %checked_add_end36, %if_then
+  %if_res = phi i64 [ 0, %if_then ], [ %overflow_check_sum_tmp32, %checked_add_end36 ]
+
+type_check_succeed14:                             ; preds = %if_else
+  call void @"\01snek_error"(i64 7)
+  br label %type_check_end16
+
+type_check_fail15:                                ; preds = %if_else
+  br label %type_check_end16
+
+type_check_end16:                                 ; preds = %type_check_fail15, %type_check_succeed14
+  %type_check_and17 = and i64 %i11, 1
+  %type_check_cond18 = icmp eq i64 %type_check_and17, 1
+  br i1 %type_check_cond18, label %type_check_succeed19, label %type_check_fail20
+
+type_check_succeed19:                             ; preds = %type_check_end16
+  call void @"\01snek_error"(i64 7)
+  br label %type_check_end21
+
+type_check_fail20:                                ; preds = %type_check_end16
+  br label %type_check_end21
+
+type_check_end21:                                 ; preds = %type_check_fail20, %type_check_succeed19
+  %binop_mul_rhs_tmp = sdiv i64 %i11, 2
+  %add_res = call { i64, i1 } @llvm.smul.with.overflow.i64(i64 %acc10, i64 %binop_mul_rhs_tmp)
+  %overflow_check_sum_tmp = extractvalue { i64, i1 } %add_res, 0
+  %overflow_check_tag_tmp = extractvalue { i64, i1 } %add_res, 1
+  br i1 %overflow_check_tag_tmp, label %checked_add_succeed, label %checked_add_fail
+
+checked_add_succeed:                              ; preds = %type_check_end21
+  call void @"\01snek_error"(i64 9)
+  br label %checked_add_end
+
+checked_add_fail:                                 ; preds = %type_check_end21
+  br label %checked_add_end
+
+checked_add_end:                                  ; preds = %checked_add_fail, %checked_add_succeed
+  store i64 %overflow_check_sum_tmp, ptr %acc, align 4
+  %i22 = load i64, ptr %i, align 4
+  %type_check_and23 = and i64 %i22, 1
+  %type_check_cond24 = icmp eq i64 %type_check_and23, 1
+  br i1 %type_check_cond24, label %type_check_succeed25, label %type_check_fail26
+
+type_check_succeed25:                             ; preds = %checked_add_end
+  call void @"\01snek_error"(i64 7)
+  br label %type_check_end27
+
+type_check_fail26:                                ; preds = %checked_add_end
+  br label %type_check_end27
+
+type_check_end27:                                 ; preds = %type_check_fail26, %type_check_succeed25
+  br i1 false, label %type_check_succeed28, label %type_check_fail29
+
+type_check_succeed28:                             ; preds = %type_check_end27
+  call void @"\01snek_error"(i64 7)
+  br label %type_check_end30
+
+type_check_fail29:                                ; preds = %type_check_end27
+  br label %type_check_end30
+
+type_check_end30:                                 ; preds = %type_check_fail29, %type_check_succeed28
+  %add_res31 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %i22, i64 2)
+  %overflow_check_sum_tmp32 = extractvalue { i64, i1 } %add_res31, 0
+  %overflow_check_tag_tmp33 = extractvalue { i64, i1 } %add_res31, 1
+  br i1 %overflow_check_tag_tmp33, label %checked_add_succeed34, label %checked_add_fail35
+
+checked_add_succeed34:                            ; preds = %type_check_end30
+  call void @"\01snek_error"(i64 9)
+  br label %checked_add_end36
+
+checked_add_fail35:                               ; preds = %type_check_end30
+  br label %checked_add_end36
+
+checked_add_end36:                                ; preds = %checked_add_fail35, %checked_add_succeed34
+  store i64 %overflow_check_sum_tmp32, ptr %i, align 4
+  br label %if_end
+}

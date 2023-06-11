@@ -1,0 +1,2 @@
+(fun (test a) (+ input a))
+(test 1)
