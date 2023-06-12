@@ -77,6 +77,11 @@ runtime_error_tests! {
         name: vec_get_not_vec,
         file: "error-tag.snek",
         expected: "",
+    },
+    {
+        name: vec_get_oob,
+        file: "vec_get_oob.snek",
+        expected: "out of bounds"
     }
 }
 

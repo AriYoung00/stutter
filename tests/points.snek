@@ -1,0 +1,27 @@
+(fun (point x y) (vec x y))
+
+(fun (point_add p1 p2)
+    (vec 
+        (+ (fst p1) (fst p2))
+        (+ (snd p1) (snd p2))))
+
+(fun (fst p) (vec-get 0 p))
+(fun (snd p) (vec-get 1 p))
+
+(block
+    (let ((a (point 1 2)) (b (point 3 4)))
+        (print (point_add a b)))
+
+    (print (point_add
+        (point 1 4)
+        (point -1 -4)))
+
+    (print (point_add
+        (point -1 4)
+        (point 1 -4)))
+
+    (let ((p (point 365 0))) 
+        (loop
+            (if (> (fst p) 0)
+                (set! p (point_add p (point -1 1)))
+                (break p)))))
