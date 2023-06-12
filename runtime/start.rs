@@ -18,8 +18,8 @@ pub extern "C" fn snek_error(errcode: i64) {
         8 => "invalid argument - expected bool",
         9 => "error - arithmetic overflow",
         10 => "invalid argument(s) - mismatched operand types",
-        11 => "invalue argument - expected tuple",
-        12 => "tuple index out of bounds",
+        11 => "invalue argument - expected vec",
+        12 => "vec index out of bounds",
         _ => "an unknown error occurred",
     });
     std::process::exit(1);
@@ -33,7 +33,8 @@ pub extern "C" fn snek_print(val: u64) {
 
 #[export_name = "\x01snek_struct_eq"]
 pub extern "C" fn snek_struct_eq(lhs: u64, rhs: u64) -> u64 {
-    let res = unsafe { snek_struct_eq_impl(lhs, rhs) };
+    let mut seen = HashSet::new();
+    let res = unsafe { snek_struct_eq_impl(lhs, rhs, &mut seen) };
     if res {
         0b111
     }
@@ -44,36 +45,37 @@ pub extern "C" fn snek_struct_eq(lhs: u64, rhs: u64) -> u64 {
 
 unsafe fn snek_struct_eq_impl(lhs: u64, rhs: u64, seen: &mut HashSet<(*const u64, *const u64)>) -> bool {
     // check tags and lower bit if integer
-    if (lhs & 0b11 != rhs & 0b11) {
+    if (lhs & 0b11) != (rhs & 0b11) {
         return false;
     }
     // if we're here, they must be the same type
 
     // integers
-    if (lhs & 0b1 == 0) {
+    if (lhs & 0b1) == 0 {
         return lhs == rhs;
     }
     // booleans
-    if (lhs & 0b11 == 0b11) {
+    if (lhs & 0b11) == 0b11 {
         return lhs == rhs;
     }
 
     // vectors
-    if (lhs & 0b1 == 0b1) {
+    if (lhs & 0b1) == 0b1 {
         let lhs_ptr = (lhs - 1) as *const u64;
         let rhs_ptr = (rhs - 1) as *const u64;
 
         // if we've attempted to check equality on these two vectors before
-        // assume they are self-referential in some complementary way and return true
-        if seen.contains((&lhs_ptr, &rhs_ptr)) || seen.contains((&rhs_ptr, &lhs_ptr)) {
-            return true;
+        // assume they are self-referential in some complementary way
+        if seen.contains(&(lhs_ptr, rhs_ptr)) || seen.contains(&(rhs_ptr, lhs_ptr)) {
+            // fall back to referential equality
+            return lhs_ptr == rhs_ptr;
         }
         seen.insert((lhs_ptr, rhs_ptr));
         
         let lhs_len = *lhs_ptr;
         let rhs_len = *rhs_ptr;
 
-        if (lhs_len != rhs_len) {
+        if lhs_len != rhs_len {
             return false;
         }
 
@@ -81,7 +83,7 @@ unsafe fn snek_struct_eq_impl(lhs: u64, rhs: u64, seen: &mut HashSet<(*const u64
             let lhs_val = *lhs_ptr.offset(i+1);
             let rhs_val = *rhs_ptr.offset(i+1);
 
-            if (snek_struct_eq_impl(lhs_val, rhs_val, seen) == false) {
+            if snek_struct_eq_impl(lhs_val, rhs_val, seen) == false {
                 return false;
             }
         }
