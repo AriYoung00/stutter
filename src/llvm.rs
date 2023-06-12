@@ -474,7 +474,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 
         // error if tuple size is less than idx
         let cond = self.builder
-            .build_int_compare(IntPredicate::UGT, tup_idx_int, tup_size, "tup_size_check_cond");
+            .build_int_compare(IntPredicate::UGE, tup_idx_int, tup_size, "tup_size_check_cond");
         let call_args = [EIntValue(self.ink_ctx.i64_type().const_int(12, false))];
         self.build_conditional_call(cond, self.exit_err_fn, &call_args, "snek_error", "tup_size_check_exit_err", ctx);
 
