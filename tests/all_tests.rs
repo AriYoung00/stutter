@@ -44,6 +44,26 @@ success_tests! {
         name: vec_cycle1,
         file: "vec_cycle1.snek",
         expected: "[1, [...], 3]"
+    },
+    {
+        name: vec_struct_eq,
+        file: "vec_struct_eq.snek",
+        expected: "true",
+    },
+    {
+        name: vec_self_ref_struct_eq,
+        file: "vec_self_ref_struct_eq.snek",
+        expected: "false",
+    },
+    {
+        name: vec_len,
+        file: "vec_len.snek",
+        expected: "5",
+    },
+    {
+        name: vec_of_var,
+        file: "vec_of_var.snek",
+        expected: "[1, 2, 3, 4]"
     }
 }
 
@@ -51,6 +71,11 @@ runtime_error_tests! {
     {
         name: vec_neg_idx,
         file: "vec_neg_idx.snek",
+        expected: "",
+    },
+    {
+        name: vec_get_not_vec,
+        file: "error-tag.snek",
         expected: "",
     }
 }
