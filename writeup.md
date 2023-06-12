@@ -1,5 +1,21 @@
 # (Green) Egg Eater Writeup
 
+## Implementation Note
+I implemented my initial Egg Eater, and this extension, as an LLVM frontend
+rather than emitting actual assembly. I did this using [the Inkwell rust
+crate](https://github.com/TheDan64/inkwell). Consequently, in order to compile
+my code, the LLVM 15 libraries and header files must be installed on your system:
+```shell
+# MacOS / Homebrew
+brew install llvm@15 && brew link llvm@15
+# Fedora / CentOS
+sudo dnf install llvm15-devel
+# Ubuntu / maybe Debian? idk
+sudo apt install llvm-15-dev
+```
+They must also be made available to whichever linker `rustc` uses.
+
+
 ## Concrete Syntax Updates
 My language includes all of the concrete syntax up through Diamondback.
 Additionally, I have added the `vec`, `vec-get`, `vec-set!`, and `vec-len`
@@ -65,39 +81,277 @@ Note -- I have only outlined semantics which have changed since Diamondback.
 
 ## Heap Diagram
 
-todo, goes something like
+My heap is laid out as follows. In this diagram, lesser addresses are at the
+top, and as we move towards the bottom addresses increase. The `---` separators
+serve as a visual reference to the reader indicating where the boundary between
+different vectors is, and they are not actually represented in memory. Each line
+which does not contains a `---` represents one word (i.e. 64 bits) of memory.
 
 ```
+HEAP START
 ---
-length
-val
-val
-val
+<length>
+<value>
+<value>
 ...
-val
+<value>
 ---
-length
-val
-val
+<length>
+<value>
+<value>
 ...
-val
+<value>
 ---
-length
-val
+.
+.
+.
 ```
-etc
+Note that these lenghts are represented in memory as "real" integers, and not as
+tagged Snek integers.
+
+
+## Tests
+### `simple_examples.snek`
+**Code**
+```
+(fun (fst v) (vec-get 0 v))
+(fun (snd v) (vec-get 1 v))
+
+(block
+    (print (vec-get (+ 1 1) (vec 4 3 995 1)))
+
+
+    (let ((a (vec 1 2 3)))
+        (block
+            (vec-set! 2 a 99)
+            (print a)))
+
+
+    (let ((a (vec 36 4)) (b (vec a)) (c (vec b)) (d (vec c)))
+        (print (fst (fst (fst (fst d))))))
+
+
+    (let ((a (vec nil 50 60)) (b (vec nil 70 80)))
+        (block
+            (vec-set! 0 a b)
+            (vec-set! 0 b a)
+            (print (snd (fst (fst (fst (fst (fst (fst a)))))))))))
+```
+**Output**
+```
+995
+[1, 2, 99]
+36
+50
+50
+```
+
+### `error-tag.snek`
+**Code**
+```
+(+ 1 (vec 1 2 3))
+```
+**Output**
+```
+CSE131_Projects on  feature-emit-llvm [!] is  v0.1.0 via 🦀 v1.68.0-nightly 
+at 23:02:19 💥 input/error-tag.run
+invalid argument - expected number
+```
+This error is caught by a runtime type check. This is a snippet of LLVM IR that
+is generated inline with the program -- it is not strictly speaking part of the
+runtime. In this case, when I call `+`, it will check to make sure both operands
+are numbers, and exit with an error if they are not.
+
+### `error-bounds.snek`
+**Code**
+```
+(let ((a (vec 1 2 3 4 5)))
+    (vec-get 5 a))
+```
+**Output**
+```
+CSE131_Projects on  feature-emit-llvm [!] is  v0.1.0 via 🦀 v1.68.0-nightly 
+at 23:01:31 💥 input/error-bounds.run
+vec index out of bounds
+```
+This error is caught by my runtime bounds check. Each time we attempt to access
+a vector, my compiler will generate a bounds check inline using LLVM IR. It
+ensures that, after the `index` expression is evaluated, the returned value is
+both a number and within the range `[0, (vec-len <vector>))`, where the
+beginning of the range is inclusive and the end is exclusive.
+
+
+### `error3.snek`
+**Code**
+```
+(vec-get 0 nil)
+```
+**Terminal**
+```
+CSE131_Projects on  feature-emit-llvm [!] is  v0.1.0 via 🦀 v1.68.0-nightly 
+at 23:00:16   input/error3.run
+invalue argument - expected vec
+```
+This error is also caught by my runtime type check. Strictly speaking, it is not
+an error which is caught using tagging -- since `nil` and vectors have the same
+tag, it is not caught by a tag check. However, I found it easier to treat `nil`
+as its own type, where it is defined by having a `vector` tag but with its upper
+bits zeroed. Thus, this is caught by my runtime type check (not tag check), and
+is related to heap-allocated values.
+
+
+### `points.snek`
+**Code**
+```
+(fun (point x y) (vec x y))
+
+(fun (point_add p1 p2)
+    (vec 
+        (+ (fst p1) (fst p2))
+        (+ (snd p1) (snd p2))))
+
+(fun (fst p) (vec-get 0 p))
+(fun (snd p) (vec-get 1 p))
+
+(block
+    (let ((a (point 1 2)) (b (point 3 4)))
+        (print (point_add a b)))
+
+    (print (point_add
+        (point 1 4)
+        (point -1 -4)))
+
+    (print (point_add
+        (point -1 4)
+        (point 1 -4)))
+
+    (let ((p (point 365 0))) 
+        (loop
+            (if (> (fst p) 0)
+                (set! p (point_add p (point -1 1)))
+                (break p)))))
+```
+**Output**
+```
+[4, 6]
+[0, 0]
+[0, 0]
+[0, 365]
+```
+
+### `bst.snek`
+**Code**
+```
+(fun (node value a b) (vec value a b))
+
+
+(fun (get_val n) (vec-get 0 n))
+(fun (set_val n value) (vec-set! 0 n value))
+
+
+(fun (left n) (vec-get 1 n))
+(fun (right n) (vec-get 2 n))
+
+
+(fun (set_left n sub) (vec-set! 1 n sub))
+(fun (set_right n sub) (vec-set! 2 n sub))
+
+
+(fun (make_bst) (vec nil nil nil))
+
+
+(fun (insert n value)
+    (if (== (get_val n) nil)
+        (block
+            (set_val n value)
+            (set_left n (make_bst))
+            (set_right n (make_bst))
+            n)
+
+        (if (> value (get_val n))
+            (insert (right n) value)
+            (insert (left n)  value))))
+
+
+(fun (contains tree value)
+    (if (== (get_val tree) value)
+        true
+
+        (if (== (get_val tree) nil)
+            false
+
+            (if (> value (get_val tree))
+                (contains (right tree) value)
+                (contains (left tree) value)))))
+
+
+(let ((the_tree (make_bst)) (another_tree (make_bst)))
+    (block
+        (insert the_tree 5)
+        (insert the_tree 4)
+        (insert the_tree 6)
+        (insert the_tree -1)
+        (insert the_tree 999)
+        (insert the_tree 998)
+        (print (contains the_tree 999))
+        (print (contains the_tree 997))
+        (print the_tree)
+        
+        (insert another_tree 500)
+        (insert another_tree 498)
+        (insert another_tree 502)
+        (insert another_tree 499)
+        (insert another_tree 501)
+        (print another_tree)
+        ))
+```
+**Output**
+```
+true
+false
+[5, [4, [-1, [nil, nil, nil], [nil, nil, nil]], [nil, nil, nil]], [6, [nil, nil, nil], [999, [998, [nil, nil, nil], [nil, nil, nil]], [nil, nil, nil]]]]
+[500, [498, [nil, nil, nil], [499, [nil, nil, nil], [nil, nil, nil]]], [502, [501, [nil, nil, nil], [nil, nil, nil]], [nil, nil, nil]]]
+[500, [498, [nil, nil, nil], [499, [nil, nil, nil], [nil, nil, nil]]], [502, [501, [nil, nil, nil], [nil, nil, nil]], [nil, nil, nil]]]
+```
+In my BST implementation, I chose to represent empty nodes as `[nil, nil, nil]`.
+Nodes are defined as a `(vec contents left_subtree right_subtree)`. 
+
 
 ## Similarity to other heap-allocated languages
-Check out python and java I guess.
+### C
+My implementation of heap-allocation is not very similar to C at all. In my Snek
+implementation, heap-allocated values are stored with a length-prefix -- when
+allocating a heap value of size `n`, we will reserve `n+1` words on the heap.
+The first word will store the length of the vector, and the rest of the words
+will store the vector's contents.
+
+Conversely, in C, all heap allocations are left up to the programmer.
+Heap-allocated blocks of memory contain no information about their length, as
+the programmer is expected to keep track of this information. This has been the
+source of many bugs (understatement of the century) over time.
+
+Since C is statically typed, its pointers are also not tagged. This is
+relatively dissimilar to my implementation, since my vec values contain a tag
+indicating that they are heap-allocated memory.
+
+### Python
+My implementation of heap-allocation is reasonably similar to that of lists in
+Python. In Python, lists are stored as references to heap-allocated arrays. I
+was unable to find any information on whether the length of each list is stored
+in the stack or the heap in python, but lists are certainly length-tagged, which
+is also similar to my implementation of `vec` -- we always know how long a chunk
+of heap-allocated memory is. Additionally, Python tags its references, rather
+than allowing for raw pointers -- this is also similar to my implementation.
 
 ## Outside Resources
 I primarily used the Inkwell / LLVM Kaleidoscope tutorial to implement this
 compiler. TODO add link
 
-Additionally, here are a list of ChatGPT conversations that I had while
-implementing this:
-- todo
-- 
+I also found some information about how python stores lists at [this link](https://www.opensourceforu.com/2021/05/memory-management-in-lists-and-tuples/)
+
+I also collaborated with Timothy Bodrov (another CSE131/231 student) in order to
+determine the best way to cyclic structural equality. He also gave me some
+feedback on my implementation of BSTs in Snek.
 
 
 ## Structural Equality
