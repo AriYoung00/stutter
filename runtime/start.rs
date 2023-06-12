@@ -44,6 +44,12 @@ pub extern "C" fn snek_struct_eq(lhs: u64, rhs: u64) -> u64 {
 }
 
 unsafe fn snek_struct_eq_impl(lhs: u64, rhs: u64, seen: &mut HashSet<(*const u64, *const u64)>) -> bool {
+    // if they have true equality, then they must be equal
+    // since they are either the same primitive, or referencing the same vec
+    if lhs == rhs {
+        return true;
+    }
+
     // check tags and lower bit if integer
     if (lhs & 0b11) != (rhs & 0b11) {
         return false;
@@ -61,17 +67,25 @@ unsafe fn snek_struct_eq_impl(lhs: u64, rhs: u64, seen: &mut HashSet<(*const u64
 
     // vectors
     if (lhs & 0b1) == 0b1 {
+        // short circuit for nil
+        if (lhs == 0b1) || (rhs == 0b1) {
+            return lhs == rhs;
+        }
+
         let lhs_ptr = (lhs - 1) as *const u64;
         let rhs_ptr = (rhs - 1) as *const u64;
 
         // if we've attempted to check equality on these two vectors before
         // assume they are self-referential in some complementary way
+        // since this means we've fully traversed two "complementary" cycles in lhs and rhs, this
+        // means that we have been unable to find some concrete difference between the cycles
+        // therefore they must be equal
         if seen.contains(&(lhs_ptr, rhs_ptr)) || seen.contains(&(rhs_ptr, lhs_ptr)) {
             // fall back to referential equality
-            return lhs_ptr == rhs_ptr;
+            return true;
         }
         seen.insert((lhs_ptr, rhs_ptr));
-        
+
         let lhs_len = *lhs_ptr;
         let rhs_len = *rhs_ptr;
 
@@ -87,6 +101,8 @@ unsafe fn snek_struct_eq_impl(lhs: u64, rhs: u64, seen: &mut HashSet<(*const u64
                 return false;
             }
         }
+
+        seen.remove(&(lhs_ptr, rhs_ptr));
         return true;
     }
 
@@ -98,6 +114,7 @@ unsafe fn snek_val_to_str(val: u64, seen: &mut HashSet<*const u64>) -> String {
     match val {
         0b011 => "false".into(),
         0b111 => "true".into(),
+        0b001 => "nil".into(),
         _ if (val & 0b01) == 1 => {
             let vec_start = (val - 1) as *const u64;
 

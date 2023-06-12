@@ -1,0 +1,25 @@
+(fun (fst v) (vec-get 0 v))
+(fun (snd v) (vec-get 1 v))
+
+(block
+    (print (vec-get (+ 1 1) (vec 4 3 995 1)))
+
+
+    (let ((a (vec 1 2 3)))
+        (block
+            (vec-set! 2 a 99)
+            (print a)))
+
+
+    (let ((a (vec 36 4)) (b (vec a)) (c (vec b)) (d (vec c)))
+        (print (fst (fst (fst (fst d))))))
+
+
+    (let ((a (vec nil 50 60)) (b (vec nil 70 80)))
+        (block
+            (vec-set! 0 a b)
+            (vec-set! 0 b a)
+            (print (snd (fst (fst (fst (fst (fst (fst a)))))))))))
+        
+
+

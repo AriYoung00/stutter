@@ -1,0 +1,62 @@
+(fun (node value a b) (vec value a b))
+
+
+(fun (get_val n) (vec-get 0 n))
+(fun (set_val n value) (vec-set! 0 n value))
+
+
+(fun (left n) (vec-get 1 n))
+(fun (right n) (vec-get 2 n))
+
+
+(fun (set_left n sub) (vec-set! 1 n sub))
+(fun (set_right n sub) (vec-set! 2 n sub))
+
+
+(fun (make_bst) (vec nil nil nil))
+
+
+(fun (insert n value)
+    (if (== (get_val n) nil)
+        (block
+            (set_val n value)
+            (set_left n (make_bst))
+            (set_right n (make_bst))
+            n)
+
+        (if (> value (get_val n))
+            (insert (right n) value)
+            (insert (left n)  value))))
+
+
+(fun (contains tree value)
+    (if (== (get_val tree) value)
+        true
+
+        (if (== (get_val tree) nil)
+            false
+
+            (if (> value (get_val tree))
+                (contains (right tree) value)
+                (contains (left tree) value)))))
+
+
+(let ((the_tree (make_bst)) (another_tree (make_bst)))
+    (block
+        (insert the_tree 5)
+        (insert the_tree 4)
+        (insert the_tree 6)
+        (insert the_tree -1)
+        (insert the_tree 999)
+        (insert the_tree 998)
+        (print (contains the_tree 999))
+        (print (contains the_tree 997))
+        (print the_tree)
+        
+        (insert another_tree 500)
+        (insert another_tree 498)
+        (insert another_tree 502)
+        (insert another_tree 499)
+        (insert another_tree 501)
+        (print another_tree)
+        ))

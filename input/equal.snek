@@ -1,0 +1,22 @@
+(block
+    (let ((a (vec 1 2 3 4 55 60)) (b (vec 1 2 3 4 55 60)))
+        (block 
+            (print (= a b))
+            (print (== a b))))
+
+    (let ((a (vec 1 2 3)) (b (vec a 5 6)) (c (vec 1 2 3)) (d (vec c 5 6)))
+        (print (== b d)))
+
+    (let ((a (vec 1 2 3)))
+        (print (== a a)))
+
+
+    (let ((a (vec 1 2 3 4 55)) (b (vec 1 2 3 4 56)))
+        (print (== a b)))
+
+    (let ((a (vec 1 2 4)) (b (vec a 5 6)) (c (vec 1 2 3)) (d (vec c 5 6)))
+        (print (== b d)))
+
+    (let ((a (vec 1 2 4)) (b (vec a 5 6)) (d (vec a 5 7)))
+        (print (== b d)))
+)
