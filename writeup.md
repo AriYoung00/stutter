@@ -297,40 +297,88 @@ false
 ### `cycle-print-3.snek`
 **Code**
 ```
-
+(let ((a (vec 1 2 3)) (b (vec 4 5 6)) (c (vec 7 8 9)))
+    (block
+        (vec-set! 1 a b)
+        (vec-set! 1 b c)
+        (vec-set! 1 c a)
+        a))
 ```
 **Output**
 ```
-
+[1, [4, [7, [...], 9], 6], 3]
 ```
 
-### `equal-equal-1.snek`
+### `cycle-equal-1.snek`
 **Code**
 ```
+(let (
+    (a (vec 1 nil 2))
+    (b (vec 3 4 nil))
+    (c (vec 1 nil 2))
+    (d (vec 1 nil 2))
+    (e (vec 3 4 nil)))
 
+    (block
+        (vec-set! 1 a b)
+        (vec-set! 2 b c)
+        (vec-set! 1 c b)
+        (vec-set! 1 d e)
+        (vec-set! 2 e d)
+        (print a)
+        (print d)
+        (== a d)))
 ```
 **Output**
 ```
-
+[1, [3, 4, [1, [...], 2]], 2]
+[1, [3, 4, [...]], 2]
+true
 ```
 
-### `equal-equal-2.snek`
+### `cycle-equal-2.snek`
 **Code**
 ```
+(let (
+    (a (vec 1 2 nil))
+    (b (vec 1 2 nil)))
 
+    (block
+        (vec-set! 2 a a)
+        (vec-set! 2 b b)
+        (print a)
+        (print b)
+        (== a b)))
 ```
 **Output**
 ```
-
+[1, 2, [...]]
+[1, 2, [...]]
+true
 ```
 
-### `equal-equal-3.snek`
+### `cycle-equal-3.snek`
 **Code**
 ```
+(let (
+    (a (vec 1 nil 2))
+    (b (vec 3 4 nil))
+    (c (vec 3 4 nil))
+    (d (vec 1 nil 2)))
 
+    (block
+        (vec-set! 1 a b)
+        (vec-set! 2 b a)
+        (vec-set! 2 c d)
+        (vec-set! 1 d c)
+        (print a)
+        (print c)
+        (== a c)))
 ```
 **Output**
 ```
-
+[1, [3, 4, [...]], 2]
+[3, 4, [1, [...], 2]]
+false
 ```
 

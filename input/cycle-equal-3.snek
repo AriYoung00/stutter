@@ -1,0 +1,14 @@
+(let (
+    (a (vec 1 nil 2))
+    (b (vec 3 4 nil))
+    (c (vec 3 4 nil))
+    (d (vec 1 nil 2)))
+
+    (block
+        (vec-set! 1 a b)
+        (vec-set! 2 b a)
+        (vec-set! 2 c d)
+        (vec-set! 1 d c)
+        (print a)
+        (print c)
+        (== a c)))
