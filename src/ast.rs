@@ -103,6 +103,7 @@ pub enum Expr {
 
     // other
     Call(String, Vec<Expr>),
+    VecLen(Box<Expr>),
     Input,
     Nil,
 }
@@ -159,6 +160,7 @@ impl fmt::Display for Expr {
             Expr::VecGet(_, _) => todo!(),
             Expr::Nil => todo!(),
             Expr::VecSet(_, _, _) => todo!(),
+            Expr::VecLen(_) => todo!(),
         }
     }
 }

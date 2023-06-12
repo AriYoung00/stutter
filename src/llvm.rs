@@ -81,6 +81,7 @@ struct Compiler<'a, 'ctx> {
 
     exit_err_fn: FunctionValue<'ctx>,
     print_fn:    FunctionValue<'ctx>,
+    struct_eq_fn: FunctionValue<'ctx>,
     heap_top:    PointerValue<'ctx>,
 }
 
@@ -121,16 +122,20 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         let i64_type = ink_ctx.i64_type();
 
         let one_arg_void_fn_type = ink_ctx.void_type().fn_type(&[IntType(i64_type)], false);
+        let two_arg_val_fn_type = ink_ctx.i64_type().fn_type(&[IntType(i64_type), IntType(i64_type)], false);
 
         let exit_err_fn = module.add_function(&make_fn_name("snek_error"),
             one_arg_void_fn_type, Some(Linkage::External));
         let print_fn = module.add_function(&make_fn_name("snek_print"),
             one_arg_void_fn_type, Some(Linkage::External));
+        let struct_eq_fn = module.add_function(&make_fn_name("snek_struct_eq"),
+            two_arg_val_fn_type, Some(Linkage::External));
+
         let heap_top = module.add_global(ink_ctx.i64_type(), Some(AddressSpace::default()), "heap_top");
         heap_top.set_initializer(&ink_ctx.i64_type().const_zero());
         let heap_top = heap_top.as_pointer_value();
 
-        Self { ink_ctx, builder, module, exit_err_fn, print_fn, heap_top }
+        Self { ink_ctx, builder, module, exit_err_fn, print_fn, struct_eq_fn, heap_top }
     }
     
     fn build_int_compare_const_conditional<'b>(
@@ -433,7 +438,21 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         self.build_conditional_call(cond, self.exit_err_fn, &[EIntValue(error_arg)], "snek_error", "same_type_check", ctx);
     }
 
-    fn vec_get_elem_ptr<'b>(&mut self, idx_val: IntValue<'ctx>, vec_val: IntValue<'ctx>, ctx: &Ctx<'b, 'ctx>) -> PointerValue<'ctx> {
+    fn get_vec_base_ptr<'b>(&mut self, vec_val: IntValue<'ctx>) -> PointerValue<'ctx> {
+        let tup_tag = self.ink_ctx.i64_type()
+            .const_int(1, false);
+        let i64_ptr = self.ink_ctx.i64_type()
+            .ptr_type(AddressSpace::default());
+
+        // remove tag bit
+        let tup_ptr_int = self.builder
+            .build_xor(vec_val, tup_tag, "tup_ptr_de_tag");
+
+        self.builder
+            .build_int_to_ptr(tup_ptr_int, i64_ptr, "tup_size_ptr")
+    }
+
+    fn get_vec_elem_ptr<'b>(&mut self, idx_val: IntValue<'ctx>, vec_val: IntValue<'ctx>, ctx: &Ctx<'b, 'ctx>) -> PointerValue<'ctx> {
         let i64_ptr = self.ink_ctx.i64_type()
             .ptr_type(AddressSpace::default());
 
@@ -442,17 +461,13 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             .const_int(1, false);
         let eight = self.ink_ctx.i64_type()
             .const_int(8, false);
-        let tup_tag = self.ink_ctx.i64_type()
-            .const_int(1, false);
-        // remove tag bit
-        let tup_ptr_int = self.builder
-            .build_xor(vec_val, tup_tag, "tup_ptr_de_tag");
+
         // remove index tag
         let tup_idx_int = self.builder
             .build_right_shift(idx_val, one, false, "tup_idx_de_tag");
+
         // read tuple size
-        let tup_size_ptr = self.builder
-            .build_int_to_ptr(tup_ptr_int, i64_ptr, "tup_size_ptr");
+        let tup_size_ptr = self.get_vec_base_ptr(vec_val);
         let tup_size = self.builder
             .build_load(self.ink_ctx.i64_type(), tup_size_ptr, "tup_size_val")
             .into_int_value();
@@ -472,12 +487,17 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         // offset index to account for length tag
         let tup_idx_int = self.builder
             .build_int_add(tup_idx_int, one, "vec_idx_length_offset");
+
         // multiply index by elem size
         let tup_idx_offset = self.builder
             .build_int_mul(tup_idx_int, eight, "tup_idx_compute_offset");
+
         // add offset to base pointer
+        let tup_ptr_int = self.builder
+            .build_ptr_to_int(tup_size_ptr, self.ink_ctx.i64_type(), "tup_ptr_to_int");
         let elem_ptr_int = self.builder
             .build_int_add(tup_ptr_int, tup_idx_offset, "tup_elem_ptr_int");
+
         // convert to pointer
         let elem_ptr = self.builder
             .build_int_to_ptr(elem_ptr_int, i64_ptr, "tup_elem_ptr");
@@ -492,6 +512,9 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         if let BOper::Equal = op {
             self.add_same_type_check(lhs, rhs, ctx)
             // for now do nothing here
+        }
+        else if let BOper::StructEqual = op {
+            // do nothing
         }
         else {
             self.add_type_check(lhs, Primitive::Int, ctx);
@@ -513,7 +536,17 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     .build_int_compare(IntPredicate::EQ, lhs, rhs, "eq_tmp");
                 self.build_int_compare_const_conditional(cond, TRUE, FALSE, "binop_eq", ctx)
             },
-            BOper::StructEqual => todo!("implement emit for StructEqual"),
+            BOper::StructEqual => {
+                // call the external function for struct equality and return that
+                let res = self.builder
+                    .build_call(self.struct_eq_fn, &[EIntValue(lhs), EIntValue(rhs)], "snek_struct_eq")
+                    .try_as_basic_value()
+                    .left()
+                    .unwrap()
+                    .into_int_value();
+
+                res
+            },
             BOper::Greater => {
                 let cond = self.builder
                     .build_int_compare(IntPredicate::SGT, lhs, rhs, "binop_gt_tmp");
@@ -805,7 +838,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 let EmitVal { val: tup_val, has_terminator: tup_has_term } = self.compile_expr(tuple_expr, ctx)?;
                 self.add_type_check(tup_val, Primitive::Tuple, ctx);
 
-                let elem_ptr = self.vec_get_elem_ptr(idx_val, tup_val, ctx);
+                let elem_ptr = self.get_vec_elem_ptr(idx_val, tup_val, ctx);
                 // load value
                 let elem_val = self.builder
                     .build_load(self.ink_ctx.i64_type(), elem_ptr, "elem_val")
@@ -823,7 +856,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 let EmitVal{ val: val_val, .. }  = self.compile_expr(val_expr, ctx)?;
                 // no type check for val
 
-                let elem_ptr = self.vec_get_elem_ptr(idx_val, vec_val, ctx);
+                let elem_ptr = self.get_vec_elem_ptr(idx_val, vec_val, ctx);
                 self.builder
                     .build_store(elem_ptr, val_val);
                 
@@ -832,6 +865,18 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 
             Expr::Nil => Ok(self.ink_ctx.i64_type()
                 .const_int(1, false).into()),
+            Expr::VecLen(vec_expr) => {
+                let EmitVal{ val: vec_val, has_terminator } = self.compile_expr(vec_expr, ctx)?;
+                let vec_size_ptr = self.get_vec_base_ptr(vec_val);
+                let vec_size = self.builder
+                    .build_load(self.ink_ctx.i64_type(), vec_size_ptr, "tup_size_val")
+                    .into_int_value();
+
+                let vec_size_tagged = self.builder
+                    .build_int_mul(vec_size, self.ink_ctx.i64_type().const_int(2, false), "vec_size_add_tag");
+
+                Ok(EmitVal { val: vec_size_tagged, has_terminator })
+            },
         }
     }
 

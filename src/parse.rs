@@ -75,9 +75,11 @@ impl Expr {
     pub fn from_block(stmts: Vec<Expr>) -> Box<Self> {
         Box::new(Self::Block(stmts))
     }
-
     pub fn from_vec_set(idx: Box<Expr>, vec: Box<Expr>, val: Box<Expr>) -> Box<Self> {
         Box::new(Self::VecSet(idx, vec, val))
+    }
+    pub fn from_vec_len(vec: Box<Expr>) -> Box<Self> {
+        Box::new(Self::VecLen(vec))
     }
 }
 
@@ -178,7 +180,7 @@ fn parse_list(op: &str, list: &[Sexp]) -> ParseResult<Box<Expr>> {
         )),
         ("loop", [rhs]) => Ok(Expr::from_loop(parse_expr(rhs)?)),
         ("break", [rhs]) => Ok(Expr::from_break(parse_expr(rhs)?)),
-        ("vec-len", [vec]) => todo!("Implement vec-len parse"),
+        ("vec-len", [vec]) => Ok(Expr::from_vec_len(parse_expr(vec)?)),
         ("fun", _) => Err("Found 'fun' in an invalid context (not top-level)".into()),
 
         (op, [a])
@@ -248,7 +250,8 @@ fn contains_input(ast: &Box<Expr>) -> bool {
         Expr::UnOp(_, ref sub)
             | Expr::Loop(ref sub)
             | Expr::Break(ref sub)
-            | Expr::Set(_, ref sub) => contains_input(sub),
+            | Expr::Set(_, ref sub) 
+            | Expr::VecLen(ref sub) => contains_input(sub),
 
         Expr::Block(ref conts)
             | Expr::Call(_, ref conts)
@@ -462,14 +465,14 @@ mod test {
 
     #[test]
     fn test_parse_index() {
-        let input = "(index 1 false)";
+        let input = "(vec-get 1 false)";
         let res: BE = input.parse().unwrap();
         assert_eq!(*res, Expr::VecGet(num(1), ebool(false)));
     }
 
     #[test]
     fn test_parse_tuple() {
-        let input = "(tuple 1 2 3)";
+        let input = "(vec 1 2 3)";
         let res: BE = input.parse().unwrap();
         assert_eq!(*res, Expr::Vec(vec![*num(1), *num(2), *num(3)]))
     }

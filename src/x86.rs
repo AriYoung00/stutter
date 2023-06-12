@@ -489,6 +489,7 @@ fn compile_expr(expr: Box<Expr>, ctx: Ctx) -> EmitResult<Assembly> {
         VecGet(_, _) => todo!(),
         Nil => todo!(),
         VecSet(_, _, _) => todo!(),
+        VecLen(_) => todo!(),
     }
 }
 
