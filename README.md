@@ -49,7 +49,7 @@ Special thanks to the UCSD CSE131 course staff and the LLVM community for their 
 
 ## Contact
 
-For any inquiries or collaboration proposals, please contact [Ariel Young](mailto:ariyoung00@example.com).
+For any inquiries or collaboration proposals, please contact [Ariel Young](mailto:ariyoung@pm.me).
 
 We hope you enjoy experimenting with Stutter as much as we enjoyed creating it!
 
